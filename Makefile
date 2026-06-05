@@ -3,16 +3,20 @@
 
 COMPOSE := docker compose
 
-.PHONY: help build run run-one shell clean
+.PHONY: help build web run run-one hq shell clean
 
 help:
 	@echo "Comandos disponíveis:"
 	@echo "  make build              - constrói a imagem Docker"
-	@echo "  make run                - processa TODAS as imagens em ./input"
-	@echo "  make run-one IMG=x.png  - processa apenas ./input/x.png"
+	@echo "  make web                - sobe a interface web em http://localhost:7860"
+	@echo "  make run                - processa TODAS as imagens em ./input (CLI)"
+	@echo "  make run-one IMG=x.png  - processa apenas ./input/x.png (CLI)"
 	@echo "  make hq IMG=x.png       - alta qualidade (octree 384, 50 steps)"
 	@echo "  make shell              - abre um shell no container"
 	@echo "  make clean              - remove a imagem Docker local"
+
+web:
+	$(COMPOSE) up web
 
 build:
 	$(COMPOSE) build

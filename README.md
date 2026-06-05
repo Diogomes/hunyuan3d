@@ -31,8 +31,36 @@ sozinho caso você rode esta mesma imagem Docker numa GPU/nuvem no futuro).
 
 ## Pré-requisitos
 
-- Docker instalado (já presente nesta máquina).
+- Docker instalado (Docker Desktop no Windows/macOS).
 - Acesso à internet na **primeira** execução (baixa ~2–3 GB de pesos).
+- (Opcional) GPU NVIDIA + `nvidia-container-toolkit` (Linux) ou GPU habilitada
+  no Docker Desktop + WSL2 (Windows) para o modo de alta qualidade com textura.
+
+---
+
+## 🚀 Início rápido (recomendado)
+
+Um único script prepara tudo e sobe a interface, **detectando GPU automaticamente**:
+
+```bash
+./setup.sh
+```
+
+- **Com GPU NVIDIA** → builda a imagem CUDA (forma **+ textura PBR**) e usa `--gpus all`.
+- **Sem GPU** → builda a imagem CPU (só forma, mais lento).
+- Roda em **Linux** e no **Windows via WSL2 / Git Bash**.
+
+Quando terminar, abra **http://localhost:7861**.
+
+Variáveis úteis:
+```bash
+FORCE_MODE=gpu ./setup.sh    # força o modo GPU
+FORCE_MODE=cpu ./setup.sh    # força o modo CPU
+PORT=7870 ./setup.sh         # muda a porta
+NO_WEB=1 ./setup.sh          # só builda, não sobe o servidor
+```
+
+> O resto deste README detalha os passos manuais (úteis se você não usar o `setup.sh`).
 
 ---
 
@@ -43,9 +71,14 @@ hunyuan3d/
 ├── input/                 # coloque aqui suas fotos (.png/.jpg/.webp)
 ├── output/                # arquivos 3D gerados (.glb / .obj) aparecem aqui
 ├── models/                # cache dos pesos do modelo (persistente)
-├── scripts/img2mesh.py    # driver: foto -> malha 3D
+├── setup.sh               # bootstrap automático (detecta GPU, builda, sobe a web)
+├── scripts/
+│   ├── core.py            # lógica compartilhada de conversão
+│   ├── img2mesh.py        # CLI: foto(s) -> malha 3D
+│   └── app.py             # interface web (Gradio)
 ├── docker/
-│   ├── Dockerfile         # imagem Python 3.10 + PyTorch CPU + hy3dgen
+│   ├── Dockerfile         # imagem CPU (PyTorch CPU + hy3dgen)
+│   ├── Dockerfile.gpu     # imagem GPU/CUDA (forma + textura PBR)
 │   ├── requirements-cpu.txt
 │   └── entrypoint.sh
 ├── docker-compose.yml
@@ -63,17 +96,26 @@ make build
 # ou: docker compose build
 ```
 
-### 2. Colocar uma foto
+### 2A. Interface web (recomendado) 🌐
 
-Copie uma imagem para `input/`. Dicas para melhor resultado:
+```bash
+make web
+```
+
+Abra **http://localhost:7861**, arraste uma imagem, ajuste a qualidade e clique
+em **Gerar objeto 3D**. O modelo aparece num visualizador 3D interativo e pode
+ser baixado em `.glb`. (Na primeira vez o servidor demora a subir porque baixa
+os pesos do modelo; depois fica em cache.)
+
+Dicas de imagem para melhor resultado:
 - Objeto **único e centralizado**, bem iluminado.
 - Fundo simples (o pipeline remove o fundo automaticamente).
 - Vista frontal nítida.
 
-### 3. Gerar o 3D
+### 2B. Linha de comando (lote) 💻
 
 ```bash
-# Processa TODAS as imagens em ./input
+# Coloque imagens em ./input e processe todas
 make run
 
 # Apenas uma imagem
@@ -112,19 +154,40 @@ docker compose run --rm hunyuan3d \
 
 ---
 
-## Rodar em GPU (opcional)
+## Rodar em GPU (alta qualidade + textura)
 
-A mesma imagem funciona em GPU NVIDIA — aí a textura PBR é gerada de verdade.
-Numa máquina/nuvem com GPU e o `nvidia-container-toolkit` instalado:
+Numa máquina com GPU NVIDIA (ex.: Windows com Docker Desktop + WSL2 +
+GPU habilitada), basta rodar o `setup.sh`: ele detecta a GPU e usa o
+`docker/Dockerfile.gpu` (PyTorch CUDA + compila os módulos de textura).
 
 ```bash
-docker compose run --rm --gpus all hunyuan3d \
-  --image /workspace/input/foto.png --texture
+./setup.sh            # detecta GPU automaticamente
+# ou force:
+FORCE_MODE=gpu ./setup.sh
 ```
 
-O driver detecta a GPU, usa `fp16`, troca o marching cubes para `dmc` e ativa o
-pipeline de textura automaticamente. Para qualidade ainda maior, troque o modelo
-para o completo: `--model tencent/Hunyuan3D-2 --subfolder hunyuan3d-dit-v2-0`.
+No modo GPU o app usa `fp16`, marching cubes `dmc` (se a lib `diso` compilar) e
+ativa o **pipeline de textura PBR** automaticamente. Os pesos de textura vêm do
+repo completo `tencent/Hunyuan3D-2` (configurável por `HY3D_TEXTURE_MODEL`).
+
+Para a **máxima qualidade de forma**, troque o modelo mini pelo completo via
+variáveis de ambiente ao subir o container:
+
+```bash
+-e HY3D_MODEL=tencent/Hunyuan3D-2 -e HY3D_SUBFOLDER=hunyuan3d-dit-v2-0
+```
+
+> ⚠️ VRAM: o modelo mini cabe em ~6 GB; o completo + textura pede ~16 GB (2.0).
+> Se faltar memória, reduza `octree-resolution` e `max-faces`, ou use o mini.
+
+### CLI em GPU
+
+```bash
+docker run --rm --gpus all \
+  -v "$PWD/input:/workspace/input" -v "$PWD/output:/workspace/output" \
+  -v "$PWD/models:/workspace/models" \
+  hunyuan3d-gpu:local --image /workspace/input/foto.png --texture
+```
 
 ---
 
