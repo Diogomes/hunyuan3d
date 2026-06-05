@@ -1,0 +1,25 @@
+# Pesos de modelos e cache do HuggingFace (grandes)
+models/*
+!models/.gitkeep
+
+# Repositório do Hunyuan3D clonado pelo setup
+third_party/Hunyuan3D-2/
+
+# Entradas e saídas geradas
+input/*
+!input/.gitkeep
+output/*
+!output/.gitkeep
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Sistema
+.DS_Store
+*.log
+
+# Estado local do Claude Code (permissões/locks específicos da máquina)
+.claude/

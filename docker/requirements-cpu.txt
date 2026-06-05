@@ -1,0 +1,35 @@
+# Dependências do hy3dgen para o pipeline de GERAÇÃO DE FORMA em CPU.
+# torch/torchvision são instalados separadamente no Dockerfile (índice CPU).
+# Os módulos de TEXTURA (custom_rasterizer / differentiable_renderer) NÃO entram
+# aqui porque exigem CUDA — ver README.
+
+# Núcleo de difusão / modelos
+# Versões fixadas para compatibilidade com torch 2.5.1 (CPU): transformers mais
+# recentes exigem torch>=2.7 (torch.float8_e8m0fnu) e quebram o import.
+diffusers==0.31.0
+transformers==4.46.3
+accelerate==1.1.1
+einops
+omegaconf
+safetensors
+huggingface_hub
+sentencepiece
+pyyaml
+tqdm
+
+# Imagem / pré-processamento (headless evita libs de GUI)
+opencv-python-headless
+pillow
+rembg
+onnxruntime
+
+# Processamento de malha (mesh)
+trimesh
+pymeshlab
+pygltflib
+xatlas
+scikit-image
+
+# Build helpers exigidos por alguns imports do hy3dgen
+ninja
+pybind11

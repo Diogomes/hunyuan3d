@@ -1,0 +1,27 @@
+# Orquestra o serviço de conversão foto -> 3D.
+# Os volumes mantêm imagens, saídas e pesos de modelo no host (fora da imagem).
+services:
+  hunyuan3d:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+      # A rede bridge padrão não tem egress nesta máquina; usar a rede do host
+      # tanto no build (apt/pip/git) quanto no runtime (download dos pesos HF).
+      network: host
+    image: hunyuan3d-cpu:local
+    container_name: hunyuan3d
+    # Runtime também na rede do host, senão o download do modelo HF falha.
+    network_mode: "host"
+    # Sem GPU nesta máquina: roda em CPU. Para usar GPU futuramente, adicione
+    # "deploy.resources.reservations.devices" com driver nvidia e remova esta nota.
+    volumes:
+      - ./input:/workspace/input
+      - ./output:/workspace/output
+      - ./models:/workspace/models
+    # Aproveita todos os núcleos da CPU.
+    environment:
+      - OMP_NUM_THREADS
+      - MKL_NUM_THREADS
+    # Sem args -> processa tudo em ./input. Para passar args, use:
+    #   docker compose run --rm hunyuan3d --image /workspace/input/foto.png --steps 40
+    command: []
