@@ -36,12 +36,21 @@ class Hunyuan3DConverter:
         variant: str = "fp16",
         device: str = "auto",
         enable_texture: bool = False,
+        texture_model: str = "tencent/Hunyuan3D-2",
         log=print,
     ):
         self.log = log
         self.device, self.dtype = resolve_device(device)
-        # Em CPU o marching cubes precisa ser 'mc' (skimage); 'dmc' exige CUDA.
-        self.mc_algo = "mc" if self.device == "cpu" else "dmc"
+        # 'dmc' (Differentiable Marching Cubes) gera malhas mais suaves, mas exige
+        # a lib 'diso' (CUDA). Em CPU — ou sem diso — usa 'mc' (skimage), que
+        # funciona em qualquer lugar.
+        self.mc_algo = "mc"
+        if self.device == "cuda":
+            try:
+                import diso  # noqa: F401
+                self.mc_algo = "dmc"
+            except Exception:
+                self.log("diso indisponível — usando marching cubes 'mc'.")
 
         if self.device == "cpu":
             torch.set_num_threads(os.cpu_count() or 4)
@@ -81,8 +90,10 @@ class Hunyuan3DConverter:
                 try:
                     from hy3dgen.texgen import Hunyuan3DPaintPipeline
 
-                    self.log("Carregando pipeline de textura (GPU)...")
-                    self.tex_pipe = Hunyuan3DPaintPipeline.from_pretrained(model)
+                    # Os pesos de textura (paint) ficam no repo completo; o modelo
+                    # mini de forma não os inclui.
+                    self.log(f"Carregando pipeline de textura (GPU) de {texture_model}...")
+                    self.tex_pipe = Hunyuan3DPaintPipeline.from_pretrained(texture_model)
                 except Exception as e:  # noqa: BLE001
                     self.log(f"AVISO: falha ao carregar textura ({e}). Seguindo sem.")
                     self.tex_pipe = None

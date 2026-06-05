@@ -32,6 +32,7 @@ from core import Hunyuan3DConverter
 OUTPUT_DIR = os.environ.get("OUTPUT_DIR", "/workspace/output")
 MODEL = os.environ.get("HY3D_MODEL", "tencent/Hunyuan3D-2mini")
 SUBFOLDER = os.environ.get("HY3D_SUBFOLDER", "hunyuan3d-dit-v2-mini")
+TEXTURE_MODEL = os.environ.get("HY3D_TEXTURE_MODEL", "tencent/Hunyuan3D-2")
 
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
@@ -49,6 +50,7 @@ CONVERTER = Hunyuan3DConverter(
     subfolder=SUBFOLDER,
     device="auto",
     enable_texture=True,  # só ativa de fato se houver GPU CUDA
+    texture_model=TEXTURE_MODEL,
     log=log,
 )
 DEVICE = CONVERTER.device
