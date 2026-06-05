@@ -43,7 +43,10 @@ hunyuan3d/
 ├── input/                 # coloque aqui suas fotos (.png/.jpg/.webp)
 ├── output/                # arquivos 3D gerados (.glb / .obj) aparecem aqui
 ├── models/                # cache dos pesos do modelo (persistente)
-├── scripts/img2mesh.py    # driver: foto -> malha 3D
+├── scripts/
+│   ├── core.py            # lógica compartilhada de conversão
+│   ├── img2mesh.py        # CLI: foto(s) -> malha 3D
+│   └── app.py             # interface web (Gradio)
 ├── docker/
 │   ├── Dockerfile         # imagem Python 3.10 + PyTorch CPU + hy3dgen
 │   ├── requirements-cpu.txt
@@ -63,17 +66,26 @@ make build
 # ou: docker compose build
 ```
 
-### 2. Colocar uma foto
+### 2A. Interface web (recomendado) 🌐
 
-Copie uma imagem para `input/`. Dicas para melhor resultado:
+```bash
+make web
+```
+
+Abra **http://localhost:7861**, arraste uma imagem, ajuste a qualidade e clique
+em **Gerar objeto 3D**. O modelo aparece num visualizador 3D interativo e pode
+ser baixado em `.glb`. (Na primeira vez o servidor demora a subir porque baixa
+os pesos do modelo; depois fica em cache.)
+
+Dicas de imagem para melhor resultado:
 - Objeto **único e centralizado**, bem iluminado.
 - Fundo simples (o pipeline remove o fundo automaticamente).
 - Vista frontal nítida.
 
-### 3. Gerar o 3D
+### 2B. Linha de comando (lote) 💻
 
 ```bash
-# Processa TODAS as imagens em ./input
+# Coloque imagens em ./input e processe todas
 make run
 
 # Apenas uma imagem

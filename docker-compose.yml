@@ -25,3 +25,18 @@ services:
     # Sem args -> processa tudo em ./input. Para passar args, use:
     #   docker compose run --rm hunyuan3d --image /workspace/input/foto.png --steps 40
     command: []
+
+  # Interface web: envie a imagem pelo navegador (http://localhost:7860).
+  # Usa a MESMA imagem; rode `make build` (no serviço hunyuan3d) antes.
+  web:
+    image: hunyuan3d-cpu:local
+    container_name: hunyuan3d-web
+    network_mode: "host"
+    volumes:
+      - ./input:/workspace/input
+      - ./output:/workspace/output
+      - ./models:/workspace/models
+    environment:
+      # 7861 para não conflitar com outros apps Gradio locais (ex.: 7860).
+      - PORT=7861
+    entrypoint: ["python", "/workspace/scripts/app.py"]

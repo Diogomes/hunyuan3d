@@ -51,9 +51,10 @@ ARG HY3D_REPO=https://github.com/Tencent-Hunyuan/Hunyuan3D-2.git
 ARG HY3D_REF=main
 RUN git clone --depth 1 --branch "${HY3D_REF}" "${HY3D_REPO}" /opt/Hunyuan3D
 
-# Nosso driver e ponto de entrada.
+# Nossos scripts (CLI img2mesh.py, web app.py, core.py compartilhado).
 WORKDIR /workspace
-COPY scripts/img2mesh.py /workspace/scripts/img2mesh.py
+ENV PYTHONPATH="/opt/Hunyuan3D:/workspace/scripts"
+COPY scripts/ /workspace/scripts/
 COPY docker/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 
