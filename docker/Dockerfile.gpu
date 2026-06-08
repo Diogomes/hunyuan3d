@@ -47,7 +47,7 @@ RUN git clone --depth 1 --branch "${HY3D_REF}" "${HY3D_REPO}" /opt/Hunyuan3D
 # Compila os módulos de textura (CUDA). Não-fatal (|| echo) para a imagem
 # sempre buildar mesmo que a textura não compile no ambiente alvo.
 RUN cd /opt/Hunyuan3D/hy3dgen/texgen/custom_rasterizer && \
-    (pip install -e . || echo "WARN: build custom_rasterizer falhou")
+    (pip install --no-build-isolation .)
 RUN cd /opt/Hunyuan3D/hy3dgen/texgen/differentiable_renderer && \
     (python setup.py install || echo "WARN: build differentiable_renderer falhou")
 

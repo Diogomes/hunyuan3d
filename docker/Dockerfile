@@ -1,62 +1,44 @@
 # ============================================================================
-#  Hunyuan3D — imagem CPU-only para geração de FORMA (mesh) a partir de fotos.
-#
-#  Esta máquina não tem GPU NVIDIA/CUDA, então:
-#   - PyTorch é instalado na variante CPU.
-#   - O pipeline de FORMA roda na CPU (lento, porém funcional).
-#   - O pipeline de TEXTURA (custom_rasterizer/differentiable_renderer) exige
-#     CUDA e NÃO é compilado aqui. O driver detecta CUDA em runtime e só ativa
-#     textura se houver GPU — útil se um dia rodar esta mesma imagem na nuvem.
+#  Hunyuan3D — imagem GPU/CUDA: geração de FORMA + TEXTURA PBR.
 # ============================================================================
-FROM python:3.10-slim-bookworm
-
+FROM nvidia/cuda:12.4.1-cudnn-devel-ubuntu22.04
 ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
-    # Caches de modelo apontam para /workspace/models (volume montado), para
-    # que os downloads (~2-3 GB) persistam entre execuções.
     HF_HOME=/workspace/models/hf \
     HY3DGEN_MODELS=/workspace/models/hy3dgen \
-    PYTHONPATH=/opt/Hunyuan3D
+    PYTHONPATH="/opt/Hunyuan3D:/workspace/scripts" \
+    TORCH_CUDA_ARCH_LIST="7.5;8.0;8.6;8.9;9.0+PTX"
 
-# Bibliotecas de sistema exigidas por pymeshlab / opencv-headless / onnxruntime.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        git \
-        build-essential \
-        libgl1 \
-        libopengl0 \
-        libegl1 \
-        libglu1-mesa \
-        libglib2.0-0 \
-        libxrender1 \
-        libxext6 \
-        libsm6 \
-        libgomp1 \
+        python3 python3-dev python3-pip \
+        git build-essential ninja-build \
+        libgl1 libopengl0 libegl1 libglu1-mesa libglib2.0-0 \
+        libxrender1 libxext6 libsm6 libgomp1 \
+    && ln -sf /usr/bin/python3 /usr/bin/python \
     && rm -rf /var/lib/apt/lists/*
 
-# PyTorch CPU (versões testadas pelo projeto, índice oficial de wheels CPU).
-RUN pip install --upgrade pip && \
-    pip install \
-        torch==2.5.1 \
-        torchvision==0.20.1 \
-        --index-url https://download.pytorch.org/whl/cpu
+RUN python -m pip install --upgrade pip && \
+    pip install torch==2.5.1 torchvision==0.20.1 \
+        --index-url https://download.pytorch.org/whl/cu124
 
-# Demais dependências do hy3dgen (variante CPU, sem módulos de textura CUDA).
-COPY docker/requirements-cpu.txt /tmp/requirements-cpu.txt
-RUN pip install -r /tmp/requirements-cpu.txt
+COPY docker/requirements-cpu.txt /tmp/requirements.txt
+RUN pip install -r /tmp/requirements.txt && \
+    (pip install diso || echo "WARN: diso falhou — usará marching cubes 'mc'")
 
-# Código-fonte do Hunyuan3D-2 (fica disponível via PYTHONPATH=/opt/Hunyuan3D).
-# Fixar um commit garante builds reproduzíveis; atualize quando quiser.
 ARG HY3D_REPO=https://github.com/Tencent-Hunyuan/Hunyuan3D-2.git
 ARG HY3D_REF=main
 RUN git clone --depth 1 --branch "${HY3D_REF}" "${HY3D_REPO}" /opt/Hunyuan3D
 
-# Nossos scripts (CLI img2mesh.py, web app.py, core.py compartilhado).
+RUN cd /opt/Hunyuan3D/hy3dgen/texgen/custom_rasterizer && \
+    (pip install --no-build-isolation -e . || echo "WARN: custom_rasterizer falhou")
+
+RUN cd /opt/Hunyuan3D/hy3dgen/texgen/differentiable_renderer && \
+    (pip install --no-build-isolation -e . || python setup.py install || echo "WARN: differentiable_renderer falhou")
+
 WORKDIR /workspace
-ENV PYTHONPATH="/opt/Hunyuan3D:/workspace/scripts"
 COPY scripts/ /workspace/scripts/
 COPY docker/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
-
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 CMD ["--help"]

@@ -33,6 +33,8 @@ OUTPUT_DIR = os.environ.get("OUTPUT_DIR", "/workspace/output")
 MODEL = os.environ.get("HY3D_MODEL", "tencent/Hunyuan3D-2mini")
 SUBFOLDER = os.environ.get("HY3D_SUBFOLDER", "hunyuan3d-dit-v2-mini")
 TEXTURE_MODEL = os.environ.get("HY3D_TEXTURE_MODEL", "tencent/Hunyuan3D-2")
+ASSET_DIR = os.path.join(os.path.dirname(__file__), "assets")
+LOGO_PATH = os.path.join(ASSET_DIR, "gigaverse-logo.png")
 
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
@@ -97,15 +99,184 @@ DEVICE_BANNER = (
     "Use steps/octree menores para testes rápidos."
 )
 
-with gr.Blocks(title="Foto → 3D (Hunyuan3D)") as demo:
-    gr.Markdown("# 📷 → 🧊 Foto para Objeto 3D (Hunyuan3D)")
-    gr.Markdown(DEVICE_BANNER)
+CUSTOM_CSS = """
+:root {
+  --gv-bg: #05070d;
+  --gv-panel: rgba(11, 16, 28, 0.88);
+  --gv-panel-2: rgba(16, 23, 38, 0.92);
+  --gv-border: rgba(81, 173, 255, 0.34);
+  --gv-blue: #0084ff;
+  --gv-cyan: #41d8ff;
+  --gv-text: #e8f2ff;
+  --gv-muted: #99abc4;
+  --gv-silver: #d8e0ea;
+}
 
-    with gr.Row():
-        with gr.Column(scale=1):
+body,
+.gradio-container {
+  background:
+    radial-gradient(circle at 50% 0%, rgba(0, 132, 255, 0.28), transparent 34rem),
+    radial-gradient(circle at 15% 20%, rgba(65, 216, 255, 0.12), transparent 22rem),
+    linear-gradient(145deg, #02040a 0%, #07101d 42%, #02040a 100%) !important;
+  color: var(--gv-text) !important;
+}
+
+.gradio-container {
+  max-width: 1240px !important;
+}
+
+.gv-hero {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(128px, 180px) 1fr;
+  gap: 26px;
+  align-items: center;
+  margin: 8px 0 22px;
+  padding: 22px;
+  border: 1px solid var(--gv-border);
+  border-radius: 18px;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.015)),
+    linear-gradient(145deg, rgba(6, 10, 19, 0.96), rgba(9, 18, 34, 0.86));
+  box-shadow: 0 0 38px rgba(0, 132, 255, 0.22), inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+  overflow: hidden;
+}
+
+.gv-hero::after {
+  content: "";
+  position: absolute;
+  inset: auto 24px 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--gv-cyan), var(--gv-blue), transparent);
+  box-shadow: 0 0 22px var(--gv-blue);
+}
+
+.gv-logo {
+  width: min(180px, 100%);
+  aspect-ratio: 1;
+  object-fit: cover;
+  border-radius: 14px;
+  box-shadow: 0 0 34px rgba(0, 132, 255, 0.42);
+}
+
+.gv-kicker {
+  margin: 0 0 8px;
+  color: var(--gv-cyan);
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+.gv-title {
+  margin: 0;
+  color: var(--gv-silver);
+  font-size: clamp(2rem, 4vw, 4rem);
+  line-height: 1;
+  font-weight: 900;
+  text-shadow: 0 0 18px rgba(65, 216, 255, 0.28);
+}
+
+.gv-title span {
+  color: var(--gv-blue);
+  text-shadow: 0 0 20px rgba(0, 132, 255, 0.72);
+}
+
+.gv-subtitle {
+  max-width: 720px;
+  margin: 12px 0 0;
+  color: var(--gv-muted);
+  font-size: 1rem;
+}
+
+.gv-status {
+  border: 1px solid rgba(65, 216, 255, 0.22);
+  border-radius: 12px;
+  padding: 12px 14px;
+  background: rgba(0, 132, 255, 0.08);
+  color: var(--gv-text);
+}
+
+.gv-workbench {
+  gap: 18px;
+}
+
+.gv-panel,
+.gv-panel > div {
+  border-color: rgba(81, 173, 255, 0.24) !important;
+}
+
+.gv-panel {
+  padding: 16px;
+  border: 1px solid rgba(81, 173, 255, 0.22);
+  border-radius: 16px;
+  background: var(--gv-panel);
+  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.38);
+}
+
+.gv-panel label,
+.gv-panel span,
+.gv-panel p {
+  color: var(--gv-text) !important;
+}
+
+.gv-note {
+  color: var(--gv-muted);
+}
+
+#generate-btn {
+  border: 1px solid rgba(65, 216, 255, 0.58) !important;
+  background: linear-gradient(135deg, #0074ff, #2ed7ff) !important;
+  color: #f7fbff !important;
+  box-shadow: 0 0 24px rgba(0, 132, 255, 0.48);
+}
+
+button.primary:hover,
+#generate-btn:hover {
+  filter: brightness(1.08);
+}
+
+.gv-panel .wrap,
+.gv-panel .block,
+.gv-panel .form,
+.gv-panel .container {
+  background: var(--gv-panel-2) !important;
+}
+
+@media (max-width: 760px) {
+  .gv-hero {
+    grid-template-columns: 1fr;
+    text-align: center;
+  }
+
+  .gv-logo {
+    margin: 0 auto;
+    width: 150px;
+  }
+}
+"""
+
+HERO_HTML = f"""
+<section class="gv-hero">
+  <img class="gv-logo" src="/file={LOGO_PATH}" alt="Gigaverse3D logo">
+  <div>
+    <p class="gv-kicker">Impressão 3D • Tecnologia • Universo</p>
+    <h1 class="gv-title">Gigaverse<span>3D</span></h1>
+    <p class="gv-subtitle">Imagem para Objetos 3D com geração local, visualização interativa e exportação em GLB.</p>
+  </div>
+</section>
+"""
+
+with gr.Blocks(title="Gigaverse3D imagem para Objetos 3D", css=CUSTOM_CSS) as demo:
+    gr.HTML(HERO_HTML)
+    gr.Markdown(DEVICE_BANNER, elem_classes="gv-status")
+
+    with gr.Row(elem_classes="gv-workbench"):
+        with gr.Column(scale=1, elem_classes="gv-panel"):
             image_in = gr.Image(type="pil", label="Imagem de entrada", height=320)
             gr.Markdown(
-                "_Dica: objeto único, centralizado, bem iluminado e fundo simples._"
+                "_Dica: objeto único, centralizado, bem iluminado e fundo simples._",
+                elem_classes="gv-note",
             )
             with gr.Accordion("Qualidade / parâmetros", open=False):
                 steps = gr.Slider(10, 50, value=30, step=5, label="Passos de difusão (mais = melhor/lento)")
@@ -116,9 +287,9 @@ with gr.Blocks(title="Foto → 3D (Hunyuan3D)") as demo:
                 with_texture = gr.Checkbox(
                     value=TEXTURE_OK, label="Gerar textura PBR (só GPU)", interactive=TEXTURE_OK
                 )
-            btn = gr.Button("🚀 Gerar objeto 3D", variant="primary")
+            btn = gr.Button("Gerar objeto 3D", variant="primary", elem_id="generate-btn")
 
-        with gr.Column(scale=1):
+        with gr.Column(scale=1, elem_classes="gv-panel"):
             model_out = gr.Model3D(label="Objeto 3D gerado", height=420)
             file_out = gr.File(label="Baixar .glb")
             status = gr.Markdown()
@@ -135,4 +306,5 @@ if __name__ == "__main__":
         server_name="0.0.0.0",
         server_port=int(os.environ.get("PORT", "7861")),
         show_error=True,
+        allowed_paths=[ASSET_DIR],
     )
