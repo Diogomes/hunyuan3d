@@ -58,6 +58,18 @@ def parse_args() -> argparse.Namespace:
                    help="Faces máximas. Default por dispositivo (GPU 120000 / CPU 40000).")
     p.add_argument("--seed", type=int, default=42)
 
+    p.add_argument("--smooth", type=int, default=0,
+                   help="Iterações de suavização Taubin da malha (0 = desligado).")
+    p.add_argument("--size-mm", type=float, default=0.0,
+                   help="Escala a peça p/ que a maior aresta meça N mm (0 = original).")
+
+    # Multi-view: várias vistas do MESMO objeto -> geometria mais fiel.
+    # Se --front for dado, roda em modo multi-view (ignora --image/--input-dir).
+    p.add_argument("--front", type=str, help="Vista frontal (ativa multi-view).")
+    p.add_argument("--back", type=str, help="Vista traseira (multi-view).")
+    p.add_argument("--left", type=str, help="Vista esquerda (multi-view).")
+    p.add_argument("--right", type=str, help="Vista direita (multi-view).")
+
     p.add_argument("--no-rembg", action="store_true",
                    help="Não remover o fundo (use se a imagem já é PNG transparente).")
     p.add_argument("--no-recenter", action="store_true",
@@ -116,9 +128,6 @@ def main() -> None:
     out_dir = Path(args.output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    images = collect_images(args)
-    log(f"{len(images)} imagem(ns) para processar.")
-
     # Formatos extras exportados junto do .glb (na mesma passada de inferência).
     extra_formats = []
     if args.also_obj:
@@ -126,23 +135,47 @@ def main() -> None:
     if args.stl:
         extra_formats.append(".stl")
 
+    # Parâmetros de geração comuns aos dois modos.
+    common = dict(
+        steps=steps,
+        octree_resolution=octree,
+        guidance_scale=args.guidance_scale,
+        max_faces=max_faces,
+        seed=args.seed,
+        remove_bg=not args.no_rembg,
+        with_texture=with_texture,
+        enhance=not args.no_enhance,
+        smooth=args.smooth,
+        target_size_mm=args.size_mm,
+        extra_formats=tuple(extra_formats),
+        make_solid=args.stl,
+    )
+
+    # --- Modo multi-view: várias vistas do MESMO objeto -> uma malha ----------
+    if args.front:
+        images = {"front": args.front, "back": args.back,
+                  "left": args.left, "right": args.right}
+        for k, v in images.items():
+            if v and not Path(v).is_file():
+                log(f"ERRO: vista '{k}' não encontrada: {v}")
+                sys.exit(1)
+        glb_path = out_dir / "modelo_mv.glb"
+        log("=== Multi-view: " + ", ".join(k for k, v in images.items() if v) + " ===")
+        converter.convert_multiview(images, str(glb_path), **common)
+        log("Tudo pronto. Arquivos em: " + str(out_dir))
+        return
+
+    # --- Modo padrão: 1 imagem -> 1 malha (lote do diretório) ----------------
+    images = collect_images(args)
+    log(f"{len(images)} imagem(ns) para processar.")
     for idx, img_path in enumerate(images, 1):
         log(f"=== [{idx}/{len(images)}] {img_path.name} ===")
         glb_path = out_dir / f"{img_path.stem}.glb"
         converter.convert(
             str(img_path),
             str(glb_path),
-            steps=steps,
-            octree_resolution=octree,
-            guidance_scale=args.guidance_scale,
-            max_faces=max_faces,
-            seed=args.seed,
-            remove_bg=not args.no_rembg,
-            with_texture=with_texture,
             recenter=not args.no_recenter,
-            enhance=not args.no_enhance,
-            extra_formats=tuple(extra_formats),
-            make_solid=args.stl,
+            **common,
         )
 
     log("Tudo pronto. Arquivos em: " + str(out_dir))

@@ -122,6 +122,11 @@ class Hunyuan3DConverter:
         self._upsampler = None
         self._esrgan_warned = False
 
+        # Pipeline multi-view (Hunyuan3D-2mv), carregado sob demanda.
+        self._mv_pipe = None
+        self._mv_model = "tencent/Hunyuan3D-2mv"
+        self._mv_subfolder = "hunyuan3d-dit-v2-mv"
+
         # Textura PBR: só com GPU CUDA (rasterizador customizado).
         self.tex_pipe = None
         self.texture_available = self.device == "cuda"
@@ -266,6 +271,83 @@ class Hunyuan3DConverter:
             self.log(f"AVISO: reparo watertight falhou ({e}). Mantendo malha original.")
             return mesh
 
+    def _smooth_mesh(self, mesh, iterations: int):
+        """Suaviza a superfície (Taubin — preserva volume). Não-fatal."""
+        if not iterations or iterations <= 0:
+            return mesh
+        try:
+            import trimesh
+
+            if isinstance(mesh, trimesh.Scene):
+                return mesh  # não suaviza cena texturizada (preserva UVs)
+            trimesh.smoothing.filter_taubin(mesh, iterations=int(iterations))
+            self.log(f"Suavização Taubin: {iterations} iterações")
+        except Exception as e:  # noqa: BLE001
+            self.log(f"AVISO: suavização falhou ({e}). Mantendo malha.")
+        return mesh
+
+    def _scale_mesh(self, mesh, target_size_mm: float):
+        """Escala a malha p/ que a maior aresta do bounding-box meça target_size_mm.
+
+        Útil p/ impressão 3D (GLB/STL em mm). Não-fatal. Em cena, escala cada
+        geometria pelo mesmo fator.
+        """
+        if not target_size_mm or target_size_mm <= 0:
+            return mesh
+        try:
+            import trimesh
+
+            geoms = (mesh.geometry.values() if isinstance(mesh, trimesh.Scene) else [mesh])
+            longest = 0.0
+            for g in geoms:
+                longest = max(longest, float(max(g.bounding_box.extents)))
+            if longest > 0:
+                factor = target_size_mm / longest
+                mesh.apply_scale(factor)
+                self.log(f"Escala p/ impressão: maior aresta -> {target_size_mm:.1f} mm "
+                         f"(fator {factor:.4f})")
+        except Exception as e:  # noqa: BLE001
+            self.log(f"AVISO: escala falhou ({e}). Mantendo tamanho.")
+        return mesh
+
+    def _postprocess_export(self, mesh, image, output_path, *, max_faces,
+                            with_texture, smooth, target_size_mm,
+                            extra_formats, make_solid, t_img):
+        """Limpeza -> suavização -> textura -> escala -> export (principal + extras).
+
+        Compartilhado entre `convert` (1 foto) e `convert_multiview`.
+        """
+        self.log("Limpando malha (floaters / faces degeneradas / redução)...")
+        mesh = self.floater(mesh)
+        mesh = self.degenerate(mesh)
+        mesh = self.reducer(mesh, max_facenum=max_faces)
+
+        # Suaviza antes da textura (mudar vértices depois quebraria as UVs).
+        mesh = self._smooth_mesh(mesh, smooth)
+
+        if with_texture and self.tex_pipe is not None:
+            self.log("Aplicando textura (GPU)...")
+            mesh = self.tex_pipe(mesh, image=image)
+
+        # Escala física (mm) por último, p/ valer no GLB e nos formatos extras.
+        mesh = self._scale_mesh(mesh, target_size_mm)
+
+        os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
+        mesh.export(output_path)
+        self.log(f"Salvo: {output_path} (em {time.time() - t_img:.1f}s)")
+
+        # Formatos extras (ex.: .stl para impressão). Opcionalmente solidifica
+        # (watertight); o GLB principal acima preserva a textura para o viewer.
+        if extra_formats:
+            export_mesh = self._make_watertight(mesh) if make_solid else mesh
+            stem = os.path.splitext(output_path)[0]
+            for ext in extra_formats:
+                ext = ext if ext.startswith(".") else "." + ext
+                ep = stem + ext
+                export_mesh.export(ep)
+                self.log(f"Salvo: {ep}")
+        return output_path
+
     def convert(
         self,
         image,
@@ -281,6 +363,8 @@ class Hunyuan3DConverter:
         recenter: bool = True,
         frame_ratio: float = 0.9,
         enhance: bool = True,
+        smooth: int = 0,
+        target_size_mm: float = 0.0,
         extra_formats=(),
         make_solid: bool = False,
     ) -> str:
@@ -300,27 +384,85 @@ class Hunyuan3DConverter:
             output_type="trimesh",
         )[0]
 
-        self.log("Limpando malha (floaters / faces degeneradas / redução)...")
-        mesh = self.floater(mesh)
-        mesh = self.degenerate(mesh)
-        mesh = self.reducer(mesh, max_facenum=max_faces)
+        return self._postprocess_export(
+            mesh, image, output_path,
+            max_faces=max_faces, with_texture=with_texture, smooth=smooth,
+            target_size_mm=target_size_mm, extra_formats=extra_formats,
+            make_solid=make_solid, t_img=t_img,
+        )
 
-        if with_texture and self.tex_pipe is not None:
-            self.log("Aplicando textura (GPU)...")
-            mesh = self.tex_pipe(mesh, image=image)
+    def _load_mv(self):
+        """Carrega (1x) o pipeline multi-view Hunyuan3D-2mv."""
+        if self._mv_pipe is None:
+            from hy3dgen.shapegen import Hunyuan3DDiTFlowMatchingPipeline
 
-        os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
-        mesh.export(output_path)
-        self.log(f"Salvo: {output_path} (em {time.time() - t_img:.1f}s)")
+            self.log(f"Carregando pipeline multi-view {self._mv_model} "
+                     f"(baixa os pesos na 1ª vez)...")
+            t0 = time.time()
+            self._mv_pipe = Hunyuan3DDiTFlowMatchingPipeline.from_pretrained(
+                self._mv_model,
+                subfolder=self._mv_subfolder,
+                variant="fp16",
+                device=self.device,
+                dtype=self.dtype,
+            )
+            self.log(f"Pipeline multi-view pronto em {time.time() - t0:.1f}s")
+        return self._mv_pipe
 
-        # Formatos extras (ex.: .stl para impressão). Opcionalmente solidifica
-        # (watertight); o GLB principal acima preserva a textura para o viewer.
-        if extra_formats:
-            export_mesh = self._make_watertight(mesh) if make_solid else mesh
-            stem = os.path.splitext(output_path)[0]
-            for ext in extra_formats:
-                ext = ext if ext.startswith(".") else "." + ext
-                ep = stem + ext
-                export_mesh.export(ep)
-                self.log(f"Salvo: {ep}")
-        return output_path
+    def convert_multiview(
+        self,
+        images: dict,
+        output_path: str,
+        *,
+        steps: int = 50,
+        octree_resolution: int = 512,
+        guidance_scale: float = 7.5,
+        max_faces: int = 120000,
+        seed: int = 42,
+        remove_bg: bool = True,
+        with_texture: bool = False,
+        enhance: bool = True,
+        smooth: int = 0,
+        target_size_mm: float = 0.0,
+        extra_formats=(),
+        make_solid: bool = False,
+    ) -> str:
+        """Gera 3D a partir de VÁRIAS vistas do mesmo objeto (geometria mais fiel).
+
+        `images` é um dict {vista: imagem} com chaves entre 'front'/'back'/
+        'left'/'right' (PIL ou caminho). 'front' é obrigatória. Não recentraliza
+        (manteria as vistas em escalas inconsistentes).
+        """
+        t_img = time.time()
+        valid = ("front", "back", "left", "right")
+        views = {}
+        for key in valid:
+            im = images.get(key)
+            if im is None:
+                continue
+            # Sem recenter: as vistas precisam de enquadramento consistente.
+            views[key] = self._prepare_image(im, remove_bg, recenter=False,
+                                             enhance=enhance).convert("RGBA")
+        if "front" not in views:
+            raise ValueError("Multi-view exige ao menos a vista 'front'.")
+        self.log(f"Multi-view com vistas: {', '.join(views.keys())}")
+
+        pipe = self._load_mv()
+        generator = torch.Generator(device="cpu").manual_seed(seed)
+        mesh = pipe(
+            image=views,
+            num_inference_steps=steps,
+            octree_resolution=octree_resolution,
+            guidance_scale=guidance_scale,
+            generator=generator,
+            mc_algo=self.mc_algo,
+            output_type="trimesh",
+        )[0]
+
+        # Textura usa a vista frontal como referência.
+        return self._postprocess_export(
+            mesh, views["front"], output_path,
+            max_faces=max_faces, with_texture=with_texture, smooth=smooth,
+            target_size_mm=target_size_mm, extra_formats=extra_formats,
+            make_solid=make_solid, t_img=t_img,
+        )

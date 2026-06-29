@@ -160,7 +160,29 @@ docker compose run --rm hunyuan3d \
 | `--texture` | — | Tenta textura PBR — **só com GPU**; ligada por padrão em GPU. |
 | `--also-obj` | — | Exporta também `.obj` além do `.glb`. |
 | `--stl` | — | Exporta `.stl` **sólido/watertight** para **impressão 3D** (fecha furos e corrige normais). O `.glb` continua texturizado para o visualizador. |
+| `--smooth` | 0 | Iterações de suavização Taubin (preserva volume). 0 = desligado. |
+| `--size-mm` | 0 | Escala a peça p/ que a **maior aresta** meça N **mm** (impressão). 0 = tamanho original. |
+| `--front`/`--back`/`--left`/`--right` | — | **Multi-view**: vistas do mesmo objeto. Passar `--front` ativa o modo. |
 | `--seed` | 42 | Reprodutibilidade. |
+
+### Multi-view (várias fotos → geometria mais fiel)
+
+Fotografando o **mesmo objeto** de ângulos diferentes, o modelo `Hunyuan3D-2mv`
+gera uma malha bem mais fiel que a partir de uma foto só. A vista **frontal** é
+obrigatória; as demais (trás/esquerda/direita) ajudam.
+
+```bash
+# CLI (dentro do container):
+python img2mesh.py \
+  --front /workspace/input/frente.png \
+  --back  /workspace/input/tras.png \
+  --left  /workspace/input/esq.png \
+  --right /workspace/input/dir.png \
+  --stl --size-mm 80
+```
+
+Na interface web há uma aba **"Multi-view (várias fotos)"** com os quatro campos.
+Os pesos do `Hunyuan3D-2mv` são baixados sob demanda na 1ª vez.
 
 ---
 
