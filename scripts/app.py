@@ -26,13 +26,18 @@ def _safe_js2pt(schema, defs=None):
     return _orig_js2pt(schema, defs)
 _gcu._json_schema_to_python_type = _safe_js2pt
 
-from core import Hunyuan3DConverter
+from core import Hunyuan3DConverter, best_model, quality_preset
 
 # Diretórios (montados como volumes no container).
 OUTPUT_DIR = os.environ.get("OUTPUT_DIR", "/workspace/output")
-MODEL = os.environ.get("HY3D_MODEL", "tencent/Hunyuan3D-2mini")
-SUBFOLDER = os.environ.get("HY3D_SUBFOLDER", "hunyuan3d-dit-v2-mini")
+# Modelo escolhido pelo dispositivo: GPU -> Hunyuan3D-2 completo (mais realista
+# + textura PBR); CPU -> mini (viável sem GPU). Pode ser sobrescrito por env.
+_DEF_MODEL, _DEF_SUBFOLDER = best_model("auto")
+MODEL = os.environ.get("HY3D_MODEL", _DEF_MODEL)
+SUBFOLDER = os.environ.get("HY3D_SUBFOLDER", _DEF_SUBFOLDER)
 TEXTURE_MODEL = os.environ.get("HY3D_TEXTURE_MODEL", "tencent/Hunyuan3D-2")
+# Padrões de qualidade dos controles (GPU = máximo; CPU = moderado).
+QP = quality_preset("auto")
 ASSET_DIR = os.path.join(os.path.dirname(__file__), "assets")
 LOGO_PATH = os.path.join(ASSET_DIR, "gigaverse-logo.png")
 
@@ -92,7 +97,8 @@ def generate(image, steps, octree, max_faces, remove_bg, with_texture, seed,
 
 
 DEVICE_BANNER = (
-    "🟢 **GPU CUDA detectada** — forma + textura PBR disponíveis."
+    f"🟢 **GPU CUDA detectada** — modelo completo `{MODEL}`, forma de alta "
+    "resolução + textura PBR. Padrões já no máximo de qualidade."
     if TEXTURE_OK else
     "🟡 **Rodando em CPU** (sem GPU NVIDIA). Gera a *forma* 3D — porém **lento** "
     "(minutos por objeto) e **sem textura PBR** (a textura exige GPU). "
@@ -278,10 +284,10 @@ with gr.Blocks(title="Gigaverse3D imagem para Objetos 3D", css=CUSTOM_CSS) as de
                 "_Dica: objeto único, centralizado, bem iluminado e fundo simples._",
                 elem_classes="gv-note",
             )
-            with gr.Accordion("Qualidade / parâmetros", open=False):
-                steps = gr.Slider(10, 50, value=30, step=5, label="Passos de difusão (mais = melhor/lento)")
-                octree = gr.Slider(128, 512, value=256, step=64, label="Resolução do octree (granularidade)")
-                max_faces = gr.Slider(5000, 100000, value=40000, step=5000, label="Faces máximas")
+            with gr.Accordion("Qualidade / parâmetros", open=DEVICE == "cuda"):
+                steps = gr.Slider(10, 50, value=QP["steps"], step=5, label="Passos de difusão (mais = melhor/lento)")
+                octree = gr.Slider(128, 512, value=QP["octree_resolution"], step=64, label="Resolução do octree (granularidade)")
+                max_faces = gr.Slider(5000, 200000, value=QP["max_faces"], step=5000, label="Faces máximas (mais = mais detalhe)")
                 seed = gr.Number(value=42, precision=0, label="Seed")
                 remove_bg = gr.Checkbox(value=True, label="Remover fundo automaticamente")
                 with_texture = gr.Checkbox(

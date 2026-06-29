@@ -26,6 +26,42 @@ def resolve_device(choice: str = "auto"):
     return choice, dtype
 
 
+# ---------------------------------------------------------------------------
+# Presets por dispositivo — o foco é QUALIDADE/REALISMO na GPU.
+#
+#   GPU (cuda): modelo COMPLETO (Hunyuan3D-2) — forma mais fiel e detalhada,
+#               e habilita a TEXTURA PBR. Parâmetros pesados (octree/steps altos,
+#               mais faces preservadas) porque a GPU dá conta.
+#   CPU:        modelo "mini" — única opção viável sem GPU (mais leve), só forma.
+#               Parâmetros moderados para não levar horas.
+# ---------------------------------------------------------------------------
+MODEL_PRESETS = {
+    "cuda": ("tencent/Hunyuan3D-2", "hunyuan3d-dit-v2-0"),
+    "cpu": ("tencent/Hunyuan3D-2mini", "hunyuan3d-dit-v2-mini"),
+}
+
+QUALITY_PRESETS = {
+    # max_faces alto preserva detalhe da geometria de octree 512 (bom p/ realismo
+    # e impressão 3D); a textura PBR só liga de fato se houver CUDA.
+    "cuda": dict(steps=50, octree_resolution=512, guidance_scale=7.5,
+                 max_faces=120000, with_texture=True),
+    "cpu": dict(steps=30, octree_resolution=256, guidance_scale=7.5,
+                max_faces=40000, with_texture=False),
+}
+
+
+def best_model(device: str = "auto"):
+    """(model, subfolder) recomendado para o dispositivo resolvido."""
+    dev, _ = resolve_device(device)
+    return MODEL_PRESETS.get(dev, MODEL_PRESETS["cpu"])
+
+
+def quality_preset(device: str = "auto") -> dict:
+    """Parâmetros de geração recomendados (cópia mutável) para o dispositivo."""
+    dev, _ = resolve_device(device)
+    return dict(QUALITY_PRESETS.get(dev, QUALITY_PRESETS["cpu"]))
+
+
 class Hunyuan3DConverter:
     """Encapsula os pipelines de forma (e textura, se houver GPU)."""
 
