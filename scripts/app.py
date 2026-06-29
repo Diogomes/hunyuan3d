@@ -66,7 +66,7 @@ log(f"Pronto. Dispositivo={DEVICE} | textura disponível={TEXTURE_OK}")
 
 
 def generate(image, steps, octree, max_faces, remove_bg, with_texture, recenter,
-             want_stl, seed, progress=gr.Progress()):
+             enhance, want_stl, seed, progress=gr.Progress()):
     """Callback do botão Gerar. Retorna (glb_viewer, download_glb, download_stl, status)."""
     if image is None:
         raise gr.Error("Envie uma imagem primeiro.")
@@ -88,6 +88,7 @@ def generate(image, steps, octree, max_faces, remove_bg, with_texture, recenter,
         remove_bg=bool(remove_bg),
         with_texture=bool(with_texture),
         recenter=bool(recenter),
+        enhance=bool(enhance),
         extra_formats=extra,
         make_solid=bool(want_stl),
     )
@@ -300,6 +301,10 @@ with gr.Blocks(title="Gigaverse3D imagem para Objetos 3D", css=CUSTOM_CSS) as de
                     value=True,
                     label="Centralizar e recortar o objeto (recomendado — mais fiel)",
                 )
+                enhance = gr.Checkbox(
+                    value=True,
+                    label="Melhorar resolução da foto pequena (Real-ESRGAN / Lanczos)",
+                )
                 with_texture = gr.Checkbox(
                     value=TEXTURE_OK, label="Gerar textura PBR (só GPU)", interactive=TEXTURE_OK
                 )
@@ -318,7 +323,7 @@ with gr.Blocks(title="Gigaverse3D imagem para Objetos 3D", css=CUSTOM_CSS) as de
     btn.click(
         fn=generate,
         inputs=[image_in, steps, octree, max_faces, remove_bg, with_texture, recenter,
-                want_stl, seed],
+                enhance, want_stl, seed],
         outputs=[model_out, file_out, file_out_stl, status],
     )
 

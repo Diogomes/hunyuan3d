@@ -156,6 +156,7 @@ docker compose run --rm hunyuan3d \
 | `--max-faces` | por dispositivo (GPU 120000 / CPU 40000) | Densidade da malha final. |
 | `--no-rembg` | — | Pula remoção de fundo (use se a foto já é PNG transparente). |
 | `--no-recenter` | — | Pula o recorte/centralização. Por padrão a imagem é recortada no contorno e centralizada num quadro quadrado — **melhora a fidelidade da forma**. |
+| `--no-enhance` | — | Pula o upscale da foto. Por padrão, fotos pequenas (lado < 1024px) são ampliadas com **Real-ESRGAN** (GPU; cai p/ Lanczos) — mais detalhe para a malha. |
 | `--texture` | — | Tenta textura PBR — **só com GPU**; ligada por padrão em GPU. |
 | `--also-obj` | — | Exporta também `.obj` além do `.glb`. |
 | `--stl` | — | Exporta `.stl` **sólido/watertight** para **impressão 3D** (fecha furos e corrige normais). O `.glb` continua texturizado para o visualizador. |

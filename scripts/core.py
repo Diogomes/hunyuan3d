@@ -118,6 +118,10 @@ class Hunyuan3DConverter:
         self.degenerate = DegenerateFaceRemover()
         self.reducer = FaceReducer()
 
+        # Upscaler da foto de entrada (carregado sob demanda na 1ª melhoria).
+        self._upsampler = None
+        self._esrgan_warned = False
+
         # Textura PBR: só com GPU CUDA (rasterizador customizado).
         self.tex_pipe = None
         self.texture_available = self.device == "cuda"
@@ -135,6 +139,65 @@ class Hunyuan3DConverter:
                     self.tex_pipe = None
             else:
                 self.log("AVISO: textura exige GPU NVIDIA/CUDA — desativada em CPU.")
+
+    def _realesrgan(self, rgb: Image.Image, scale: int):
+        """Super-resolução aprendida (Real-ESRGAN). Retorna PIL RGB ou None.
+
+        Usa o backend ai-forever/Real-ESRGAN (API em PIL, sem `basicsr` — este
+        é incompatível com torchvision >=0.17). Totalmente guardado: qualquer
+        falha (lib ausente, sem pesos, OOM) retorna None p/ cair no Lanczos.
+        """
+        try:
+            if self._upsampler is None:
+                from RealESRGAN import RealESRGAN
+
+                models_dir = os.environ.get("HY3DGEN_MODELS", "/workspace/models")
+                weights = os.path.join(models_dir, "realesrgan", "RealESRGAN_x4.pth")
+                os.makedirs(os.path.dirname(weights), exist_ok=True)
+                m = RealESRGAN(self.device, scale=4)
+                m.load_weights(weights, download=True)
+                self._upsampler = m
+            out = self._upsampler.predict(rgb)  # x4, retorna PIL
+            return out
+        except Exception as e:  # noqa: BLE001
+            if not self._esrgan_warned:
+                self.log(f"Real-ESRGAN indisponível ({e}); usando Lanczos.")
+                self._esrgan_warned = True
+            return None
+
+    def _enhance_image(self, image: Image.Image, target_min: int = 1024,
+                       max_side: int = 2048) -> Image.Image:
+        """Aumenta a resolução de fotos pequenas (lado menor < target_min).
+
+        Tenta Real-ESRGAN; cai para Lanczos. Preserva o canal alfa. Fotos já
+        grandes passam intactas. `max_side` limita o tamanho final (memória).
+        """
+        w, h = image.size
+        if min(w, h) >= target_min:
+            return image
+
+        alpha = image.split()[-1] if image.mode in ("RGBA", "LA") else None
+        rgb = image.convert("RGB")
+
+        up = self._realesrgan(rgb, 4)
+        if up is not None:
+            self.log(f"Upscale Real-ESRGAN: {(w, h)} -> {up.size}")
+        else:
+            import math
+            scale = min(4, max(2, math.ceil(target_min / min(w, h))))
+            up = rgb.resize((w * scale, h * scale), Image.LANCZOS)
+            self.log(f"Upscale Lanczos x{scale}: {(w, h)} -> {up.size}")
+
+        # Não estourar memória com imagens enormes.
+        if max(up.size) > max_side:
+            r = max_side / max(up.size)
+            up = up.resize((max(1, int(up.size[0] * r)), max(1, int(up.size[1] * r))),
+                           Image.LANCZOS)
+
+        if alpha is not None:
+            up = up.convert("RGBA")
+            up.putalpha(alpha.resize(up.size, Image.LANCZOS))
+        return up
 
     @staticmethod
     def _recenter(image: Image.Image, frame_ratio: float = 0.9) -> Image.Image:
@@ -158,9 +221,13 @@ class Hunyuan3DConverter:
         return canvas
 
     def _prepare_image(self, image, remove_bg: bool, recenter: bool = True,
-                       frame_ratio: float = 0.9) -> Image.Image:
+                       frame_ratio: float = 0.9, enhance: bool = True) -> Image.Image:
         if isinstance(image, str):
             image = Image.open(image)
+        # Melhoria/upscale da foto crua antes de tudo (mais detalhe p/ o rembg
+        # e p/ o encoder do modelo). Só age em imagens pequenas.
+        if enhance:
+            image = self._enhance_image(image)
         image = image.convert("RGBA")
         if remove_bg:
             has_alpha = image.mode == "RGBA" and image.getextrema()[3][0] < 255
@@ -213,12 +280,13 @@ class Hunyuan3DConverter:
         with_texture: bool = False,
         recenter: bool = True,
         frame_ratio: float = 0.9,
+        enhance: bool = True,
         extra_formats=(),
         make_solid: bool = False,
     ) -> str:
         """Converte uma imagem (PIL ou caminho) em arquivo 3D. Retorna o caminho."""
         t_img = time.time()
-        image = self._prepare_image(image, remove_bg, recenter, frame_ratio)
+        image = self._prepare_image(image, remove_bg, recenter, frame_ratio, enhance)
 
         self.log(f"Gerando forma (steps={steps}, octree={octree_resolution})...")
         generator = torch.Generator(device="cpu").manual_seed(seed)

@@ -62,6 +62,8 @@ def parse_args() -> argparse.Namespace:
                    help="Não remover o fundo (use se a imagem já é PNG transparente).")
     p.add_argument("--no-recenter", action="store_true",
                    help="Não recortar/centralizar o objeto (por padrão reenquadra p/ mais fidelidade).")
+    p.add_argument("--no-enhance", action="store_true",
+                   help="Não melhorar/upscale fotos pequenas (por padrão usa Real-ESRGAN/Lanczos).")
     p.add_argument("--texture", action="store_true",
                    help="Tentar textura PBR. Só funciona com GPU CUDA; ignorado em CPU.")
     p.add_argument("--also-obj", action="store_true",
@@ -138,6 +140,7 @@ def main() -> None:
             remove_bg=not args.no_rembg,
             with_texture=with_texture,
             recenter=not args.no_recenter,
+            enhance=not args.no_enhance,
             extra_formats=tuple(extra_formats),
             make_solid=args.stl,
         )
