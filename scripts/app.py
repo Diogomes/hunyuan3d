@@ -65,7 +65,7 @@ TEXTURE_OK = CONVERTER.texture_available
 log(f"Pronto. Dispositivo={DEVICE} | textura disponível={TEXTURE_OK}")
 
 
-def generate(image, steps, octree, max_faces, remove_bg, with_texture, seed,
+def generate(image, steps, octree, max_faces, remove_bg, with_texture, recenter, seed,
              progress=gr.Progress()):
     """Callback do botão Gerar. Retorna (caminho_glb_para_viewer, caminho_para_download, status)."""
     if image is None:
@@ -86,6 +86,7 @@ def generate(image, steps, octree, max_faces, remove_bg, with_texture, seed,
         seed=int(seed),
         remove_bg=bool(remove_bg),
         with_texture=bool(with_texture),
+        recenter=bool(recenter),
     )
     dt = time.time() - t0
     progress(1.0, desc="Concluído")
@@ -290,6 +291,10 @@ with gr.Blocks(title="Gigaverse3D imagem para Objetos 3D", css=CUSTOM_CSS) as de
                 max_faces = gr.Slider(5000, 200000, value=QP["max_faces"], step=5000, label="Faces máximas (mais = mais detalhe)")
                 seed = gr.Number(value=42, precision=0, label="Seed")
                 remove_bg = gr.Checkbox(value=True, label="Remover fundo automaticamente")
+                recenter = gr.Checkbox(
+                    value=True,
+                    label="Centralizar e recortar o objeto (recomendado — mais fiel)",
+                )
                 with_texture = gr.Checkbox(
                     value=TEXTURE_OK, label="Gerar textura PBR (só GPU)", interactive=TEXTURE_OK
                 )
@@ -302,7 +307,7 @@ with gr.Blocks(title="Gigaverse3D imagem para Objetos 3D", css=CUSTOM_CSS) as de
 
     btn.click(
         fn=generate,
-        inputs=[image_in, steps, octree, max_faces, remove_bg, with_texture, seed],
+        inputs=[image_in, steps, octree, max_faces, remove_bg, with_texture, recenter, seed],
         outputs=[model_out, file_out, status],
     )
 

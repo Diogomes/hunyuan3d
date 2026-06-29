@@ -136,7 +136,29 @@ class Hunyuan3DConverter:
             else:
                 self.log("AVISO: textura exige GPU NVIDIA/CUDA — desativada em CPU.")
 
-    def _prepare_image(self, image, remove_bg: bool) -> Image.Image:
+    @staticmethod
+    def _recenter(image: Image.Image, frame_ratio: float = 0.9) -> Image.Image:
+        """Recorta no contorno (alfa) e centraliza num quadro quadrado com margem.
+
+        O Hunyuan3D gera formas mais fiéis quando o objeto está centralizado e
+        preenchendo o quadro. `frame_ratio` = fração do lado ocupada pelo objeto
+        (0.9 => 10% de margem). Imagem sem alfa/totalmente transparente passa
+        intacta.
+        """
+        if image.mode != "RGBA":
+            return image
+        bbox = image.split()[-1].getbbox()  # caixa do conteúdo não-transparente
+        if bbox is None:
+            return image  # nada opaco para enquadrar
+        obj = image.crop(bbox)
+        w, h = obj.size
+        side = max(1, int(round(max(w, h) / max(frame_ratio, 0.1))))
+        canvas = Image.new("RGBA", (side, side), (0, 0, 0, 0))
+        canvas.paste(obj, ((side - w) // 2, (side - h) // 2))
+        return canvas
+
+    def _prepare_image(self, image, remove_bg: bool, recenter: bool = True,
+                       frame_ratio: float = 0.9) -> Image.Image:
         if isinstance(image, str):
             image = Image.open(image)
         image = image.convert("RGBA")
@@ -145,6 +167,11 @@ class Hunyuan3DConverter:
             if not has_alpha:
                 self.log("Removendo fundo...")
                 image = self.rembg(image.convert("RGB"))
+        if recenter:
+            before = image.size
+            image = self._recenter(image, frame_ratio)
+            if image.size != before:
+                self.log(f"Reenquadrado: {before} -> {image.size} (objeto centralizado)")
         return image
 
     def convert(
@@ -159,10 +186,12 @@ class Hunyuan3DConverter:
         seed: int = 42,
         remove_bg: bool = True,
         with_texture: bool = False,
+        recenter: bool = True,
+        frame_ratio: float = 0.9,
     ) -> str:
         """Converte uma imagem (PIL ou caminho) em arquivo 3D. Retorna o caminho."""
         t_img = time.time()
-        image = self._prepare_image(image, remove_bg)
+        image = self._prepare_image(image, remove_bg, recenter, frame_ratio)
 
         self.log(f"Gerando forma (steps={steps}, octree={octree_resolution})...")
         generator = torch.Generator(device="cpu").manual_seed(seed)

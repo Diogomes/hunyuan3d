@@ -151,11 +151,12 @@ docker compose run --rm hunyuan3d \
 
 | Flag | Padrão | Efeito |
 |---|---|---|
-| `--steps` | 30 | Qualidade da difusão. Em CPU, 50 já é bem lento. |
-| `--octree-resolution` | 256 | Detalhe da superfície. 512 = máximo detalhe, máximo tempo. |
-| `--max-faces` | 40000 | Densidade da malha final. |
+| `--steps` | por dispositivo (GPU 50 / CPU 30) | Qualidade da difusão. Em CPU, 50 já é bem lento. |
+| `--octree-resolution` | por dispositivo (GPU 512 / CPU 256) | Detalhe da superfície. 512 = máximo detalhe, máximo tempo. |
+| `--max-faces` | por dispositivo (GPU 120000 / CPU 40000) | Densidade da malha final. |
 | `--no-rembg` | — | Pula remoção de fundo (use se a foto já é PNG transparente). |
-| `--texture` | — | Tenta textura PBR — **só com GPU**; ignorado em CPU. |
+| `--no-recenter` | — | Pula o recorte/centralização. Por padrão a imagem é recortada no contorno e centralizada num quadro quadrado — **melhora a fidelidade da forma**. |
+| `--texture` | — | Tenta textura PBR — **só com GPU**; ligada por padrão em GPU. |
 | `--seed` | 42 | Reprodutibilidade. |
 
 ---

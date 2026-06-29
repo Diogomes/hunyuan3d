@@ -60,6 +60,8 @@ def parse_args() -> argparse.Namespace:
 
     p.add_argument("--no-rembg", action="store_true",
                    help="Não remover o fundo (use se a imagem já é PNG transparente).")
+    p.add_argument("--no-recenter", action="store_true",
+                   help="Não recortar/centralizar o objeto (por padrão reenquadra p/ mais fidelidade).")
     p.add_argument("--texture", action="store_true",
                    help="Tentar textura PBR. Só funciona com GPU CUDA; ignorado em CPU.")
     p.add_argument("--also-obj", action="store_true",
@@ -126,6 +128,7 @@ def main() -> None:
             seed=args.seed,
             remove_bg=not args.no_rembg,
             with_texture=with_texture,
+            recenter=not args.no_recenter,
         )
         if args.also_obj:
             # Reexporta a partir do .glb já gerado (evita rodar a inferência 2x).
