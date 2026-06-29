@@ -310,6 +310,22 @@ class Hunyuan3DConverter:
             self.log(f"AVISO: escala falhou ({e}). Mantendo tamanho.")
         return mesh
 
+    def _lay_on_floor(self, mesh):
+        """Centraliza em XY e apoia a base em Z=0 (pronto p/ a mesa de impressão).
+
+        Não-fatal. Em cena, opera no conjunto (mesma translação p/ todas as geos).
+        """
+        try:
+            b = mesh.bounds  # [[minx,miny,minz],[maxx,maxy,maxz]]
+            tx = -(b[0][0] + b[1][0]) / 2.0
+            ty = -(b[0][1] + b[1][1]) / 2.0
+            tz = -b[0][2]
+            mesh.apply_translation([tx, ty, tz])
+            self.log("Posicionado na mesa de impressão (centro XY, base em Z=0).")
+        except Exception as e:  # noqa: BLE001
+            self.log(f"AVISO: posicionamento na mesa falhou ({e}). Mantendo posição.")
+        return mesh
+
     def _postprocess_export(self, mesh, image, output_path, *, max_faces,
                             with_texture, smooth, target_size_mm,
                             extra_formats, make_solid, t_img):
@@ -339,7 +355,10 @@ class Hunyuan3DConverter:
         # Formatos extras (ex.: .stl para impressão). Opcionalmente solidifica
         # (watertight); o GLB principal acima preserva a textura para o viewer.
         if extra_formats:
-            export_mesh = self._make_watertight(mesh) if make_solid else mesh
+            export_mesh = mesh
+            if make_solid:
+                export_mesh = self._make_watertight(mesh)
+                export_mesh = self._lay_on_floor(export_mesh)
             stem = os.path.splitext(output_path)[0]
             for ext in extra_formats:
                 ext = ext if ext.startswith(".") else "." + ext
