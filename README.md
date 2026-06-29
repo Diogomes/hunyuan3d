@@ -19,10 +19,16 @@ Isso tem consequências diretas:
 | **Geração de forma** (a malha 3D) | ✅ Funciona, porém **lento** (minutos por objeto) | ✅ Rápido |
 | **Textura PBR de alta qualidade** | ❌ **Indisponível** — exige rasterizador CUDA | ✅ Funciona |
 
-Por isso o projeto está configurado para o modo **CPU-only**, usando o modelo
-leve **Hunyuan3D-2mini**, e gera a **forma 3D** com boa granularidade. A textura
-fica desativada automaticamente (o código já detecta CUDA e religa a textura
-sozinho caso você rode esta mesma imagem Docker numa GPU/nuvem no futuro).
+O projeto **escolhe a configuração pelo dispositivo, priorizando realismo**:
+
+- **Em GPU NVIDIA** → modelo **completo `Hunyuan3D-2`** (forma mais fiel e
+  detalhada) + **textura PBR**, com parâmetros no máximo (octree 512, 50 steps,
+  até 120 mil faces). Tudo automático — é só rodar na máquina com GPU.
+- **Nesta máquina (CPU)** → modelo leve **Hunyuan3D-2mini**, só a **forma 3D**
+  (sem textura PBR), com parâmetros moderados para não levar horas.
+
+A troca é automática: o código detecta CUDA e religa modelo completo + textura
+sozinho ao rodar a mesma imagem Docker numa GPU.
 
 **Quer textura/PBR de verdade?** A mesma imagem Docker roda numa GPU alugada
 (RunPod, Vast.ai, etc.) — veja [Rodar em GPU](#rodar-em-gpu-opcional).
@@ -166,19 +172,23 @@ GPU habilitada), basta rodar o `setup.sh`: ele detecta a GPU e usa o
 FORCE_MODE=gpu ./setup.sh
 ```
 
-No modo GPU o app usa `fp16`, marching cubes `dmc` (se a lib `diso` compilar) e
-ativa o **pipeline de textura PBR** automaticamente. Os pesos de textura vêm do
-repo completo `tencent/Hunyuan3D-2` (configurável por `HY3D_TEXTURE_MODEL`).
+No modo GPU o app já usa, **sem configuração extra**: o modelo **completo
+`tencent/Hunyuan3D-2`** (forma de maior realismo), `fp16`, marching cubes `dmc`
+(se a lib `diso` compilar), **octree 512 / 50 steps / até 120k faces** e o
+**pipeline de textura PBR** ligado. Os pesos de textura vêm do mesmo repo
+completo (configurável por `HY3D_TEXTURE_MODEL`).
 
-Para a **máxima qualidade de forma**, troque o modelo mini pelo completo via
-variáveis de ambiente ao subir o container:
+Se quiser **forçar outro modelo** (ex.: voltar ao mini numa GPU com pouca VRAM),
+use variáveis de ambiente ao subir o container:
 
 ```bash
--e HY3D_MODEL=tencent/Hunyuan3D-2 -e HY3D_SUBFOLDER=hunyuan3d-dit-v2-0
+# Forçar o mini (menos VRAM):
+-e HY3D_MODEL=tencent/Hunyuan3D-2mini -e HY3D_SUBFOLDER=hunyuan3d-dit-v2-mini
 ```
 
-> ⚠️ VRAM: o modelo mini cabe em ~6 GB; o completo + textura pede ~16 GB (2.0).
-> Se faltar memória, reduza `octree-resolution` e `max-faces`, ou use o mini.
+> ⚠️ VRAM: o modelo mini cabe em ~6 GB; o completo + textura (padrão na GPU)
+> pede ~16 GB. Se faltar memória, reduza `octree-resolution`/`max-faces` nos
+> controles, ou force o mini com as variáveis acima.
 
 ### CLI em GPU
 
