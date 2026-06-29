@@ -65,15 +65,16 @@ TEXTURE_OK = CONVERTER.texture_available
 log(f"Pronto. Dispositivo={DEVICE} | textura disponível={TEXTURE_OK}")
 
 
-def generate(image, steps, octree, max_faces, remove_bg, with_texture, recenter, seed,
-             progress=gr.Progress()):
-    """Callback do botão Gerar. Retorna (caminho_glb_para_viewer, caminho_para_download, status)."""
+def generate(image, steps, octree, max_faces, remove_bg, with_texture, recenter,
+             want_stl, seed, progress=gr.Progress()):
+    """Callback do botão Gerar. Retorna (glb_viewer, download_glb, download_stl, status)."""
     if image is None:
         raise gr.Error("Envie uma imagem primeiro.")
 
     progress(0.1, desc="Preparando imagem...")
     stem = time.strftime("modelo_%Y%m%d_%H%M%S")
     out_path = os.path.join(OUTPUT_DIR, f"{stem}.glb")
+    extra = (".stl",) if want_stl else ()
 
     t0 = time.time()
     progress(0.3, desc=f"Gerando malha em {DEVICE} (pode levar minutos)...")
@@ -87,14 +88,18 @@ def generate(image, steps, octree, max_faces, remove_bg, with_texture, recenter,
         remove_bg=bool(remove_bg),
         with_texture=bool(with_texture),
         recenter=bool(recenter),
+        extra_formats=extra,
+        make_solid=bool(want_stl),
     )
     dt = time.time() - t0
     progress(1.0, desc="Concluído")
 
+    stl_path = os.path.splitext(out_path)[0] + ".stl" if want_stl else None
     tex_note = "" if (with_texture and TEXTURE_OK) else \
         "  (sem textura — requer GPU NVIDIA/CUDA)"
-    status = f"✅ Gerado em {dt:.0f}s no dispositivo **{DEVICE}**{tex_note}\n\nArquivo: `{out_path}`"
-    return out_path, out_path, status
+    stl_note = f"\nSTL p/ impressão: `{stl_path}`" if stl_path else ""
+    status = f"✅ Gerado em {dt:.0f}s no dispositivo **{DEVICE}**{tex_note}\n\nArquivo: `{out_path}`{stl_note}"
+    return out_path, out_path, stl_path, status
 
 
 DEVICE_BANNER = (
@@ -298,17 +303,23 @@ with gr.Blocks(title="Gigaverse3D imagem para Objetos 3D", css=CUSTOM_CSS) as de
                 with_texture = gr.Checkbox(
                     value=TEXTURE_OK, label="Gerar textura PBR (só GPU)", interactive=TEXTURE_OK
                 )
+                want_stl = gr.Checkbox(
+                    value=False,
+                    label="Gerar .STL para impressão 3D (sólido/watertight)",
+                )
             btn = gr.Button("Gerar objeto 3D", variant="primary", elem_id="generate-btn")
 
         with gr.Column(scale=1, elem_classes="gv-panel"):
             model_out = gr.Model3D(label="Objeto 3D gerado", height=420)
             file_out = gr.File(label="Baixar .glb")
+            file_out_stl = gr.File(label="Baixar .stl (impressão 3D)")
             status = gr.Markdown()
 
     btn.click(
         fn=generate,
-        inputs=[image_in, steps, octree, max_faces, remove_bg, with_texture, recenter, seed],
-        outputs=[model_out, file_out, status],
+        inputs=[image_in, steps, octree, max_faces, remove_bg, with_texture, recenter,
+                want_stl, seed],
+        outputs=[model_out, file_out, file_out_stl, status],
     )
 
 if __name__ == "__main__":

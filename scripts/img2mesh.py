@@ -66,6 +66,8 @@ def parse_args() -> argparse.Namespace:
                    help="Tentar textura PBR. Só funciona com GPU CUDA; ignorado em CPU.")
     p.add_argument("--also-obj", action="store_true",
                    help="Exportar também .obj além do .glb.")
+    p.add_argument("--stl", action="store_true",
+                   help="Exportar .stl sólido/watertight para impressão 3D.")
     p.add_argument("--device", type=str, default="auto", choices=["auto", "cpu", "cuda"])
     return p.parse_args()
 
@@ -115,6 +117,13 @@ def main() -> None:
     images = collect_images(args)
     log(f"{len(images)} imagem(ns) para processar.")
 
+    # Formatos extras exportados junto do .glb (na mesma passada de inferência).
+    extra_formats = []
+    if args.also_obj:
+        extra_formats.append(".obj")
+    if args.stl:
+        extra_formats.append(".stl")
+
     for idx, img_path in enumerate(images, 1):
         log(f"=== [{idx}/{len(images)}] {img_path.name} ===")
         glb_path = out_dir / f"{img_path.stem}.glb"
@@ -129,13 +138,9 @@ def main() -> None:
             remove_bg=not args.no_rembg,
             with_texture=with_texture,
             recenter=not args.no_recenter,
+            extra_formats=tuple(extra_formats),
+            make_solid=args.stl,
         )
-        if args.also_obj:
-            # Reexporta a partir do .glb já gerado (evita rodar a inferência 2x).
-            import trimesh
-            obj_path = out_dir / f"{img_path.stem}.obj"
-            trimesh.load(str(glb_path)).export(str(obj_path))
-            log(f"Salvo: {obj_path}")
 
     log("Tudo pronto. Arquivos em: " + str(out_dir))
 

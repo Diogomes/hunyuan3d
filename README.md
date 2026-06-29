@@ -157,6 +157,8 @@ docker compose run --rm hunyuan3d \
 | `--no-rembg` | — | Pula remoção de fundo (use se a foto já é PNG transparente). |
 | `--no-recenter` | — | Pula o recorte/centralização. Por padrão a imagem é recortada no contorno e centralizada num quadro quadrado — **melhora a fidelidade da forma**. |
 | `--texture` | — | Tenta textura PBR — **só com GPU**; ligada por padrão em GPU. |
+| `--also-obj` | — | Exporta também `.obj` além do `.glb`. |
+| `--stl` | — | Exporta `.stl` **sólido/watertight** para **impressão 3D** (fecha furos e corrige normais). O `.glb` continua texturizado para o visualizador. |
 | `--seed` | 42 | Reprodutibilidade. |
 
 ---

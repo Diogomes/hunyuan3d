@@ -174,6 +174,31 @@ class Hunyuan3DConverter:
                 self.log(f"Reenquadrado: {before} -> {image.size} (objeto centralizado)")
         return image
 
+    def _make_watertight(self, mesh):
+        """Repara a malha para um sólido fechado (bom p/ impressão 3D).
+
+        Funde vértices, fecha furos e corrige normais/orientação. Não-fatal:
+        qualquer erro mantém a malha original. Cenas texturizadas viram uma
+        malha única (a cor não importa para STL de impressão).
+        """
+        try:
+            import trimesh
+
+            m = mesh
+            if isinstance(m, trimesh.Scene):
+                m = trimesh.util.concatenate(tuple(m.geometry.values()))
+            m = m.copy()
+            m.merge_vertices()
+            trimesh.repair.fill_holes(m)
+            trimesh.repair.fix_winding(m)
+            trimesh.repair.fix_normals(m)
+            m.remove_unreferenced_vertices()
+            self.log(f"Reparo p/ impressão: watertight={m.is_watertight}")
+            return m
+        except Exception as e:  # noqa: BLE001
+            self.log(f"AVISO: reparo watertight falhou ({e}). Mantendo malha original.")
+            return mesh
+
     def convert(
         self,
         image,
@@ -188,6 +213,8 @@ class Hunyuan3DConverter:
         with_texture: bool = False,
         recenter: bool = True,
         frame_ratio: float = 0.9,
+        extra_formats=(),
+        make_solid: bool = False,
     ) -> str:
         """Converte uma imagem (PIL ou caminho) em arquivo 3D. Retorna o caminho."""
         t_img = time.time()
@@ -217,4 +244,15 @@ class Hunyuan3DConverter:
         os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
         mesh.export(output_path)
         self.log(f"Salvo: {output_path} (em {time.time() - t_img:.1f}s)")
+
+        # Formatos extras (ex.: .stl para impressão). Opcionalmente solidifica
+        # (watertight); o GLB principal acima preserva a textura para o viewer.
+        if extra_formats:
+            export_mesh = self._make_watertight(mesh) if make_solid else mesh
+            stem = os.path.splitext(output_path)[0]
+            for ext in extra_formats:
+                ext = ext if ext.startswith(".") else "." + ext
+                ep = stem + ext
+                export_mesh.export(ep)
+                self.log(f"Salvo: {ep}")
         return output_path
