@@ -14,7 +14,7 @@ import argparse
 import sys
 from pathlib import Path
 
-from core import IMG_EXTS, Hunyuan3DConverter, best_model, quality_preset
+from core import IMG_EXTS, Hunyuan3DConverter, best_model, quality_preset, level_preset
 
 
 def log(msg: str) -> None:
@@ -49,6 +49,9 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--subfolder", type=str, default=None)
     p.add_argument("--variant", type=str, default="fp16")
 
+    p.add_argument("--preset", type=str, default=None,
+                   choices=["rascunho", "equilibrado", "maximo"],
+                   help="Nível de qualidade (define steps/octree/max-faces; flags explícitos têm prioridade).")
     p.add_argument("--steps", type=int, default=None,
                    help="Passos de difusão. Default por dispositivo (GPU 50 / CPU 30).")
     p.add_argument("--octree-resolution", type=int, default=None,
@@ -110,9 +113,14 @@ def main() -> None:
     def_model, def_subfolder = best_model(args.device)
     model = args.model or def_model
     subfolder = args.subfolder or def_subfolder
-    steps = args.steps if args.steps is not None else qp["steps"]
-    octree = args.octree_resolution if args.octree_resolution is not None else qp["octree_resolution"]
-    max_faces = args.max_faces if args.max_faces is not None else qp["max_faces"]
+    # Preset de nível define a base; flags explícitos têm prioridade; senão, o
+    # preset do dispositivo.
+    lp = level_preset(args.preset) if args.preset else {}
+    steps = args.steps if args.steps is not None else lp.get("steps", qp["steps"])
+    octree = args.octree_resolution if args.octree_resolution is not None \
+        else lp.get("octree_resolution", qp["octree_resolution"])
+    max_faces = args.max_faces if args.max_faces is not None \
+        else lp.get("max_faces", qp["max_faces"])
     # Na GPU, liga textura PBR por padrão (foco em realismo); --texture força.
     with_texture = args.texture or qp["with_texture"]
 

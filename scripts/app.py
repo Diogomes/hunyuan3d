@@ -26,7 +26,7 @@ def _safe_js2pt(schema, defs=None):
     return _orig_js2pt(schema, defs)
 _gcu._json_schema_to_python_type = _safe_js2pt
 
-from core import Hunyuan3DConverter, best_model, quality_preset
+from core import Hunyuan3DConverter, best_model, quality_preset, level_preset
 
 # Diretórios (montados como volumes no container).
 OUTPUT_DIR = os.environ.get("OUTPUT_DIR", "/workspace/output")
@@ -88,8 +88,18 @@ def _status(out_path, want_stl, with_texture, dt):
     tex_note = "" if (with_texture and TEXTURE_OK) else \
         "  (sem textura — requer GPU NVIDIA/CUDA)"
     stl_note = f"\nSTL p/ impressão: `{stl_path}`" if stl_path else ""
+
+    info = getattr(CONVERTER, "last_info", None)
+    info_note = ""
+    if info:
+        sx, sy, sz = info["size_mm"]
+        vol = f" · volume {info['volume_cm3']} cm³" if info.get("volume_cm3") is not None else ""
+        wt = "sólido ✅" if info.get("watertight") else "aberto ⚠️"
+        info_note = (f"\n\n**Peça:** {info['faces']:,} faces · "
+                     f"{sx}×{sy}×{sz} mm · {wt}{vol}")
+
     status = (f"✅ Gerado em {dt:.0f}s no dispositivo **{DEVICE}**{tex_note}"
-              f"\n\nArquivo: `{out_path}`{stl_note}")
+              f"\n\nArquivo: `{out_path}`{stl_note}{info_note}")
     return out_path, out_path, stl_path, status
 
 
@@ -345,6 +355,11 @@ with gr.Blocks(title="Gigaverse3D imagem para Objetos 3D", css=CUSTOM_CSS) as de
                         img_right = gr.Image(type="pil", label="Direita", height=180)
                     btn_mv = gr.Button("Gerar (multi-view)", variant="primary", elem_id="generate-btn")
 
+            quality_level = gr.Radio(
+                ["Rascunho", "Equilibrado", "Máximo"],
+                value=("Máximo" if DEVICE == "cuda" else "Equilibrado"),
+                label="Preset de qualidade (ajusta os parâmetros abaixo)",
+            )
             with gr.Accordion("Qualidade / parâmetros", open=DEVICE == "cuda"):
                 steps = gr.Slider(10, 50, value=QP["steps"], step=5, label="Passos de difusão (mais = melhor/lento)")
                 octree = gr.Slider(128, 512, value=QP["octree_resolution"], step=64, label="Resolução do octree (granularidade)")
@@ -370,6 +385,18 @@ with gr.Blocks(title="Gigaverse3D imagem para Objetos 3D", css=CUSTOM_CSS) as de
             file_out = gr.File(label="Baixar .glb")
             file_out_stl = gr.File(label="Baixar .stl (impressão 3D)")
             status = gr.Markdown()
+
+    # Seletor de qualidade -> atualiza os 3 sliders.
+    _LEVELS = {"Rascunho": "rascunho", "Equilibrado": "equilibrado", "Máximo": "maximo"}
+
+    def apply_level(level):
+        p = level_preset(_LEVELS.get(level, ""))
+        if not p:
+            return gr.update(), gr.update(), gr.update()
+        return p["steps"], p["octree_resolution"], p["max_faces"]
+
+    quality_level.change(apply_level, inputs=[quality_level],
+                         outputs=[steps, octree, max_faces])
 
     _outputs = [model_out, file_out, file_out_stl, status]
     btn.click(

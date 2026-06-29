@@ -160,6 +160,7 @@ docker compose run --rm hunyuan3d \
 | `--texture` | — | Tenta textura PBR — **só com GPU**; ligada por padrão em GPU. |
 | `--also-obj` | — | Exporta também `.obj` além do `.glb`. |
 | `--stl` | — | Exporta `.stl` **sólido/watertight** para **impressão 3D** (fecha furos e corrige normais). O `.glb` continua texturizado para o visualizador. |
+| `--preset` | — | Nível de qualidade: `rascunho`/`equilibrado`/`maximo` (define steps/octree/max-faces). Flags explícitos têm prioridade. |
 | `--smooth` | 0 | Iterações de suavização Taubin (preserva volume). 0 = desligado. |
 | `--size-mm` | 0 | Escala a peça p/ que a **maior aresta** meça N **mm** (impressão). 0 = tamanho original. |
 | `--front`/`--back`/`--left`/`--right` | — | **Multi-view**: vistas do mesmo objeto. Passar `--front` ativa o modo. |

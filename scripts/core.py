@@ -50,6 +50,20 @@ QUALITY_PRESETS = {
 }
 
 
+# Presets de NÍVEL de qualidade (independentes do dispositivo) — usados pelo
+# seletor da web e pela flag --preset da CLI.
+LEVEL_PRESETS = {
+    "rascunho": dict(steps=20, octree_resolution=192, max_faces=30000),
+    "equilibrado": dict(steps=35, octree_resolution=320, max_faces=80000),
+    "maximo": dict(steps=50, octree_resolution=512, max_faces=150000),
+}
+
+
+def level_preset(name: str) -> dict:
+    """Parâmetros para um nível ('rascunho'/'equilibrado'/'maximo'). {} se inválido."""
+    return dict(LEVEL_PRESETS.get((name or "").strip().lower(), {}))
+
+
 def best_model(device: str = "auto"):
     """(model, subfolder) recomendado para o dispositivo resolvido."""
     dev, _ = resolve_device(device)
@@ -126,6 +140,9 @@ class Hunyuan3DConverter:
         self._mv_pipe = None
         self._mv_model = "tencent/Hunyuan3D-2mv"
         self._mv_subfolder = "hunyuan3d-dit-v2-mv"
+
+        # Resumo da última malha gerada (dimensões, volume, faces, watertight).
+        self.last_info = None
 
         # Textura PBR: só com GPU CUDA (rasterizador customizado).
         self.tex_pipe = None
@@ -310,6 +327,26 @@ class Hunyuan3DConverter:
             self.log(f"AVISO: escala falhou ({e}). Mantendo tamanho.")
         return mesh
 
+    def _mesh_info(self, mesh):
+        """Resumo p/ impressão: faces, dimensões (mm), volume (cm³), watertight."""
+        try:
+            import trimesh
+
+            m = mesh
+            if isinstance(m, trimesh.Scene):
+                m = trimesh.util.concatenate(tuple(m.geometry.values()))
+            ext = [round(float(x), 1) for x in m.bounding_box.extents]
+            watertight = bool(m.is_watertight)
+            return {
+                "faces": int(len(m.faces)),
+                "size_mm": tuple(ext),
+                "watertight": watertight,
+                # volume só faz sentido fechado; mm³ -> cm³.
+                "volume_cm3": (round(float(m.volume) / 1000.0, 2) if watertight else None),
+            }
+        except Exception:  # noqa: BLE001
+            return None
+
     def _lay_on_floor(self, mesh):
         """Centraliza em XY e apoia a base em Z=0 (pronto p/ a mesa de impressão).
 
@@ -365,6 +402,15 @@ class Hunyuan3DConverter:
                 ep = stem + ext
                 export_mesh.export(ep)
                 self.log(f"Salvo: {ep}")
+
+        # Resumo da peça (útil p/ impressão).
+        self.last_info = self._mesh_info(mesh)
+        if self.last_info:
+            i = self.last_info
+            vol = f", volume {i['volume_cm3']} cm³" if i["volume_cm3"] is not None else ""
+            self.log(f"Peça: {i['faces']} faces, "
+                     f"{i['size_mm'][0]}x{i['size_mm'][1]}x{i['size_mm'][2]} mm, "
+                     f"watertight={i['watertight']}{vol}")
         return output_path
 
     def convert(
