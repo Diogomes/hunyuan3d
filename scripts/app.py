@@ -26,7 +26,7 @@ def _safe_js2pt(schema, defs=None):
     return _orig_js2pt(schema, defs)
 _gcu._json_schema_to_python_type = _safe_js2pt
 
-from core import Hunyuan3DConverter, best_model, quality_preset
+from core import Hunyuan3DConverter, best_model, quality_preset, level_preset
 
 # Diretórios (montados como volumes no container).
 OUTPUT_DIR = os.environ.get("OUTPUT_DIR", "/workspace/output")
@@ -65,35 +65,84 @@ TEXTURE_OK = CONVERTER.texture_available
 log(f"Pronto. Dispositivo={DEVICE} | textura disponível={TEXTURE_OK}")
 
 
-def generate(image, steps, octree, max_faces, remove_bg, with_texture, seed,
-             progress=gr.Progress()):
-    """Callback do botão Gerar. Retorna (caminho_glb_para_viewer, caminho_para_download, status)."""
-    if image is None:
-        raise gr.Error("Envie uma imagem primeiro.")
-
-    progress(0.1, desc="Preparando imagem...")
-    stem = time.strftime("modelo_%Y%m%d_%H%M%S")
-    out_path = os.path.join(OUTPUT_DIR, f"{stem}.glb")
-
-    t0 = time.time()
-    progress(0.3, desc=f"Gerando malha em {DEVICE} (pode levar minutos)...")
-    CONVERTER.convert(
-        image,
-        out_path,
+def _common_kwargs(steps, octree, max_faces, remove_bg, with_texture, enhance,
+                   smooth, target_mm, want_stl, seed):
+    """Monta os kwargs compartilhados entre 1-foto e multi-view."""
+    return dict(
         steps=int(steps),
         octree_resolution=int(octree),
         max_faces=int(max_faces),
         seed=int(seed),
         remove_bg=bool(remove_bg),
         with_texture=bool(with_texture),
+        enhance=bool(enhance),
+        smooth=int(smooth),
+        target_size_mm=float(target_mm),
+        extra_formats=(".stl",) if want_stl else (),
+        make_solid=bool(want_stl),
     )
-    dt = time.time() - t0
-    progress(1.0, desc="Concluído")
 
+
+def _status(out_path, want_stl, with_texture, dt):
+    stl_path = os.path.splitext(out_path)[0] + ".stl" if want_stl else None
     tex_note = "" if (with_texture and TEXTURE_OK) else \
         "  (sem textura — requer GPU NVIDIA/CUDA)"
-    status = f"✅ Gerado em {dt:.0f}s no dispositivo **{DEVICE}**{tex_note}\n\nArquivo: `{out_path}`"
-    return out_path, out_path, status
+    stl_note = f"\nSTL p/ impressão: `{stl_path}`" if stl_path else ""
+
+    info = getattr(CONVERTER, "last_info", None)
+    info_note = ""
+    if info:
+        sx, sy, sz = info["size_mm"]
+        vol = f" · volume {info['volume_cm3']} cm³" if info.get("volume_cm3") is not None else ""
+        wt = "sólido ✅" if info.get("watertight") else "aberto ⚠️"
+        info_note = (f"\n\n**Peça:** {info['faces']:,} faces · "
+                     f"{sx}×{sy}×{sz} mm · {wt}{vol}")
+
+    status = (f"✅ Gerado em {dt:.0f}s no dispositivo **{DEVICE}**{tex_note}"
+              f"\n\nArquivo: `{out_path}`{stl_note}{info_note}")
+    return out_path, out_path, stl_path, status
+
+
+def generate(image, steps, octree, max_faces, remove_bg, with_texture, recenter,
+             enhance, smooth, target_mm, want_stl, seed, progress=gr.Progress()):
+    """Callback (1 foto). Retorna (glb_viewer, download_glb, download_stl, status)."""
+    if image is None:
+        raise gr.Error("Envie uma imagem primeiro.")
+
+    progress(0.1, desc="Preparando imagem...")
+    out_path = os.path.join(OUTPUT_DIR, time.strftime("modelo_%Y%m%d_%H%M%S") + ".glb")
+
+    t0 = time.time()
+    progress(0.3, desc=f"Gerando malha em {DEVICE} (pode levar minutos)...")
+    CONVERTER.convert(
+        image, out_path, recenter=bool(recenter),
+        **_common_kwargs(steps, octree, max_faces, remove_bg, with_texture,
+                         enhance, smooth, target_mm, want_stl, seed),
+    )
+    progress(1.0, desc="Concluído")
+    return _status(out_path, want_stl, with_texture, time.time() - t0)
+
+
+def generate_mv(front, back, left, right, steps, octree, max_faces, remove_bg,
+                with_texture, enhance, smooth, target_mm, want_stl, seed,
+                progress=gr.Progress()):
+    """Callback (multi-view). Usa várias vistas do mesmo objeto."""
+    if front is None:
+        raise gr.Error("A vista frontal ('Frente') é obrigatória.")
+
+    progress(0.1, desc="Preparando vistas...")
+    images = {"front": front, "back": back, "left": left, "right": right}
+    out_path = os.path.join(OUTPUT_DIR, time.strftime("modelo_mv_%Y%m%d_%H%M%S") + ".glb")
+
+    t0 = time.time()
+    progress(0.3, desc=f"Gerando malha multi-view em {DEVICE} (pode levar minutos)...")
+    CONVERTER.convert_multiview(
+        images, out_path,
+        **_common_kwargs(steps, octree, max_faces, remove_bg, with_texture,
+                         enhance, smooth, target_mm, want_stl, seed),
+    )
+    progress(1.0, desc="Concluído")
+    return _status(out_path, want_stl, with_texture, time.time() - t0)
 
 
 DEVICE_BANNER = (
@@ -279,31 +328,88 @@ with gr.Blocks(title="Gigaverse3D imagem para Objetos 3D", css=CUSTOM_CSS) as de
 
     with gr.Row(elem_classes="gv-workbench"):
         with gr.Column(scale=1, elem_classes="gv-panel"):
-            image_in = gr.Image(type="pil", label="Imagem de entrada", height=320)
-            gr.Markdown(
-                "_Dica: objeto único, centralizado, bem iluminado e fundo simples._",
-                elem_classes="gv-note",
+            with gr.Tabs():
+                with gr.Tab("Uma foto"):
+                    image_in = gr.Image(type="pil", label="Imagem de entrada", height=300)
+                    gr.Markdown(
+                        "_Dica: objeto único, centralizado, bem iluminado e fundo simples._",
+                        elem_classes="gv-note",
+                    )
+                    recenter = gr.Checkbox(
+                        value=True,
+                        label="Centralizar e recortar o objeto (recomendado — mais fiel)",
+                    )
+                    btn = gr.Button("Gerar objeto 3D", variant="primary", elem_id="generate-btn")
+
+                with gr.Tab("Multi-view (várias fotos)"):
+                    gr.Markdown(
+                        "_O **mesmo objeto** em vistas diferentes → geometria muito mais "
+                        "fiel. A vista **Frente** é obrigatória; as outras ajudam._",
+                        elem_classes="gv-note",
+                    )
+                    with gr.Row():
+                        img_front = gr.Image(type="pil", label="Frente (obrigatória)", height=180)
+                        img_back = gr.Image(type="pil", label="Trás", height=180)
+                    with gr.Row():
+                        img_left = gr.Image(type="pil", label="Esquerda", height=180)
+                        img_right = gr.Image(type="pil", label="Direita", height=180)
+                    btn_mv = gr.Button("Gerar (multi-view)", variant="primary", elem_id="generate-btn")
+
+            quality_level = gr.Radio(
+                ["Rascunho", "Equilibrado", "Máximo"],
+                value=("Máximo" if DEVICE == "cuda" else "Equilibrado"),
+                label="Preset de qualidade (ajusta os parâmetros abaixo)",
             )
             with gr.Accordion("Qualidade / parâmetros", open=DEVICE == "cuda"):
                 steps = gr.Slider(10, 50, value=QP["steps"], step=5, label="Passos de difusão (mais = melhor/lento)")
                 octree = gr.Slider(128, 512, value=QP["octree_resolution"], step=64, label="Resolução do octree (granularidade)")
                 max_faces = gr.Slider(5000, 200000, value=QP["max_faces"], step=5000, label="Faces máximas (mais = mais detalhe)")
+                smooth = gr.Slider(0, 20, value=0, step=1, label="Suavização da malha (Taubin; 0 = desligado)")
+                target_mm = gr.Number(value=0, label="Tamanho p/ impressão em mm (0 = tamanho original)")
                 seed = gr.Number(value=42, precision=0, label="Seed")
                 remove_bg = gr.Checkbox(value=True, label="Remover fundo automaticamente")
+                enhance = gr.Checkbox(
+                    value=True,
+                    label="Melhorar resolução da foto pequena (Real-ESRGAN / Lanczos)",
+                )
                 with_texture = gr.Checkbox(
                     value=TEXTURE_OK, label="Gerar textura PBR (só GPU)", interactive=TEXTURE_OK
                 )
-            btn = gr.Button("Gerar objeto 3D", variant="primary", elem_id="generate-btn")
+                want_stl = gr.Checkbox(
+                    value=False,
+                    label="Gerar .STL para impressão 3D (sólido/watertight)",
+                )
 
         with gr.Column(scale=1, elem_classes="gv-panel"):
             model_out = gr.Model3D(label="Objeto 3D gerado", height=420)
             file_out = gr.File(label="Baixar .glb")
+            file_out_stl = gr.File(label="Baixar .stl (impressão 3D)")
             status = gr.Markdown()
 
+    # Seletor de qualidade -> atualiza os 3 sliders.
+    _LEVELS = {"Rascunho": "rascunho", "Equilibrado": "equilibrado", "Máximo": "maximo"}
+
+    def apply_level(level):
+        p = level_preset(_LEVELS.get(level, ""))
+        if not p:
+            return gr.update(), gr.update(), gr.update()
+        return p["steps"], p["octree_resolution"], p["max_faces"]
+
+    quality_level.change(apply_level, inputs=[quality_level],
+                         outputs=[steps, octree, max_faces])
+
+    _outputs = [model_out, file_out, file_out_stl, status]
     btn.click(
         fn=generate,
-        inputs=[image_in, steps, octree, max_faces, remove_bg, with_texture, seed],
-        outputs=[model_out, file_out, status],
+        inputs=[image_in, steps, octree, max_faces, remove_bg, with_texture, recenter,
+                enhance, smooth, target_mm, want_stl, seed],
+        outputs=_outputs,
+    )
+    btn_mv.click(
+        fn=generate_mv,
+        inputs=[img_front, img_back, img_left, img_right, steps, octree, max_faces,
+                remove_bg, with_texture, enhance, smooth, target_mm, want_stl, seed],
+        outputs=_outputs,
     )
 
 if __name__ == "__main__":

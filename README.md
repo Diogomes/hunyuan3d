@@ -151,12 +151,39 @@ docker compose run --rm hunyuan3d \
 
 | Flag | Padrão | Efeito |
 |---|---|---|
-| `--steps` | 30 | Qualidade da difusão. Em CPU, 50 já é bem lento. |
-| `--octree-resolution` | 256 | Detalhe da superfície. 512 = máximo detalhe, máximo tempo. |
-| `--max-faces` | 40000 | Densidade da malha final. |
+| `--steps` | por dispositivo (GPU 50 / CPU 30) | Qualidade da difusão. Em CPU, 50 já é bem lento. |
+| `--octree-resolution` | por dispositivo (GPU 512 / CPU 256) | Detalhe da superfície. 512 = máximo detalhe, máximo tempo. |
+| `--max-faces` | por dispositivo (GPU 120000 / CPU 40000) | Densidade da malha final. |
 | `--no-rembg` | — | Pula remoção de fundo (use se a foto já é PNG transparente). |
-| `--texture` | — | Tenta textura PBR — **só com GPU**; ignorado em CPU. |
+| `--no-recenter` | — | Pula o recorte/centralização. Por padrão a imagem é recortada no contorno e centralizada num quadro quadrado — **melhora a fidelidade da forma**. |
+| `--no-enhance` | — | Pula o upscale da foto. Por padrão, fotos pequenas (lado < 1024px) são ampliadas com **Real-ESRGAN** (GPU; cai p/ Lanczos) — mais detalhe para a malha. |
+| `--texture` | — | Tenta textura PBR — **só com GPU**; ligada por padrão em GPU. |
+| `--also-obj` | — | Exporta também `.obj` além do `.glb`. |
+| `--stl` | — | Exporta `.stl` **sólido/watertight** para **impressão 3D** (fecha furos e corrige normais). O `.glb` continua texturizado para o visualizador. |
+| `--preset` | — | Nível de qualidade: `rascunho`/`equilibrado`/`maximo` (define steps/octree/max-faces). Flags explícitos têm prioridade. |
+| `--smooth` | 0 | Iterações de suavização Taubin (preserva volume). 0 = desligado. |
+| `--size-mm` | 0 | Escala a peça p/ que a **maior aresta** meça N **mm** (impressão). 0 = tamanho original. |
+| `--front`/`--back`/`--left`/`--right` | — | **Multi-view**: vistas do mesmo objeto. Passar `--front` ativa o modo. |
 | `--seed` | 42 | Reprodutibilidade. |
+
+### Multi-view (várias fotos → geometria mais fiel)
+
+Fotografando o **mesmo objeto** de ângulos diferentes, o modelo `Hunyuan3D-2mv`
+gera uma malha bem mais fiel que a partir de uma foto só. A vista **frontal** é
+obrigatória; as demais (trás/esquerda/direita) ajudam.
+
+```bash
+# CLI (dentro do container):
+python img2mesh.py \
+  --front /workspace/input/frente.png \
+  --back  /workspace/input/tras.png \
+  --left  /workspace/input/esq.png \
+  --right /workspace/input/dir.png \
+  --stl --size-mm 80
+```
+
+Na interface web há uma aba **"Multi-view (várias fotos)"** com os quatro campos.
+Os pesos do `Hunyuan3D-2mv` são baixados sob demanda na 1ª vez.
 
 ---
 

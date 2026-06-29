@@ -39,6 +39,11 @@ COPY docker/requirements-cpu.txt /tmp/requirements.txt
 RUN pip install -r /tmp/requirements.txt && \
     (pip install diso || echo "WARN: diso falhou — usará marching cubes 'mc'")
 
+# Upscaler da foto de entrada (Real-ESRGAN, backend ai-forever — sem basicsr,
+# compatível com torchvision moderno). Não-fatal: sem ele, cai p/ Lanczos.
+RUN (pip install git+https://github.com/ai-forever/Real-ESRGAN.git \
+     || echo "WARN: Real-ESRGAN falhou — upscale usará Lanczos")
+
 # Código-fonte do Hunyuan3D-2.
 ARG HY3D_REPO=https://github.com/Tencent-Hunyuan/Hunyuan3D-2.git
 ARG HY3D_REF=main
